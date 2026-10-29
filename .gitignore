@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.venv/
+__pycache__/
+*.pyc
+backend/uploads/*
+!backend/uploads/.gitkeep
+ml-service/model/brfss2015_clean.csv

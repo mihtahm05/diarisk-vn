@@ -1,0 +1,142 @@
+{
+  "mode": "clinical",
+  "model_features": [
+    "age_group",
+    "sex",
+    "bmi",
+    "smoker_status",
+    "physical_activity",
+    "fruits_daily",
+    "veggies_daily",
+    "heavy_alcohol",
+    "gen_health",
+    "ment_hlth_days",
+    "phys_hlth_days",
+    "diff_walk",
+    "education",
+    "income",
+    "any_healthcare",
+    "no_doc_cost",
+    "high_bp",
+    "bp_meds",
+    "high_chol",
+    "chol_check",
+    "stroke",
+    "heart_disease",
+    "heart_attack",
+    "kidney_disease",
+    "depressive_disorder",
+    "asthma",
+    "arthritis",
+    "copd",
+    "last_checkup"
+  ],
+  "api_fields": [
+    "age",
+    "sex",
+    "bmi",
+    "smoker_status",
+    "physical_activity",
+    "fruits_daily",
+    "veggies_daily",
+    "heavy_alcohol",
+    "gen_health",
+    "ment_hlth_days",
+    "phys_hlth_days",
+    "diff_walk",
+    "education",
+    "income",
+    "any_healthcare",
+    "no_doc_cost",
+    "high_bp",
+    "bp_meds",
+    "high_chol",
+    "chol_check",
+    "stroke",
+    "heart_disease",
+    "heart_attack",
+    "kidney_disease",
+    "depressive_disorder",
+    "asthma",
+    "arthritis",
+    "copd",
+    "last_checkup"
+  ],
+  "always_required": [
+    "age",
+    "sex",
+    "bmi"
+  ],
+  "age_range": [
+    18,
+    120
+  ],
+  "bmi_range": [
+    10,
+    100
+  ],
+  "sex_values": [
+    "Male",
+    "Female"
+  ],
+  "smoker_values": [
+    "current",
+    "former",
+    "never"
+  ],
+  "binary_fields": [
+    "sex",
+    "physical_activity",
+    "fruits_daily",
+    "veggies_daily",
+    "heavy_alcohol",
+    "diff_walk",
+    "any_healthcare",
+    "no_doc_cost",
+    "high_bp",
+    "bp_meds",
+    "high_chol",
+    "chol_check",
+    "stroke",
+    "heart_disease",
+    "heart_attack",
+    "kidney_disease",
+    "depressive_disorder",
+    "asthma",
+    "arthritis",
+    "copd"
+  ],
+  "integer_ranges": {
+    "gen_health": [
+      1,
+      5
+    ],
+    "education": [
+      1,
+      6
+    ],
+    "income": [
+      1,
+      8
+    ],
+    "ment_hlth_days": [
+      0,
+      30
+    ],
+    "phys_hlth_days": [
+      0,
+      30
+    ],
+    "last_checkup": [
+      1,
+      5
+    ]
+  },
+  "missing_policy": {
+    "nonclinical": 3,
+    "clinical": 2
+  },
+  "threshold": 0.1335200957660101,
+  "version": "diarisk-dual-v1",
+  "source": "XPT"
+}

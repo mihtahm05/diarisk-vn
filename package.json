@@ -1,0 +1,11 @@
+
+{
+  "name": "diarisk-vn",
+  "private": true,
+  "scripts": {
+  "dev": "concurrently -k -n FRONTEND,BACKEND,ML \"npm --prefix frontend run dev -- --host 0.0.0.0\" \"npm --prefix backend run dev\" \"./ml-service/.venv/bin/uvicorn app:app --app-dir ml-service --reload --host 127.0.0.1 --port 8000\""
+},
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
