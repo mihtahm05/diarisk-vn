@@ -3,11 +3,12 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import { OwnHistoryPage, PasswordPage, ProfilePage } from "./components/AccountPages";
 import { useAuth } from "./context/AuthContext";
 import { ROLE_HOME } from "./services/authService";
-import AuthPage from "./pages/auth/AuthPage";
+import LoginPage from "./pages/auth/LoginPage";
+import RegisterPage from "./pages/auth/RegisterPage";
 import UserDashboard from "./pages/user/HistoryPage";
 import HealthPredict from "./pages/user/PredictionPage";
 import DoctorDashboard from "./pages/doctor/DoctorDashboard";
-import BatchPredict from "./pages/doctor/BatchPredict";
+import PatientPredictLayout from "./pages/doctor/PatientPredictLayout";
 import PatientList from "./pages/doctor/PatientList";
 import ReportExport from "./pages/doctor/ReportExport";
 import AdminDashboard from "./pages/admin/AdminDashboard";
@@ -25,8 +26,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<RootRedirect />} />
-      <Route path="/login" element={<AuthPage mode="login" />} />
-      <Route path="/register" element={<AuthPage mode="register" />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
 
       {/* Người dùng phổ thông */}
       <Route element={<ProtectedRoute roles={["user"]} />}>
@@ -43,9 +44,7 @@ export default function App() {
       <Route element={<ProtectedRoute roles={["doctor"]} />}>
         <Route path="/doctor" element={<DoctorDashboard />}>
           <Route index element={<Navigate to="predict" replace />} />
-          <Route path="predict" element={<HealthPredict key="pt-nc" mode="nonclinical" target="patient" />} />
-          <Route path="predict-clinical" element={<HealthPredict key="pt-c" mode="clinical" target="patient" />} />
-          <Route path="batch" element={<BatchPredict />} />
+          <Route path="predict" element={<PatientPredictLayout />} />
           <Route path="patients" element={<PatientList />} />
           <Route path="reports" element={<ReportExport />} />
           <Route path="self" element={<HealthPredict key="self" mode="nonclinical" target="self" />} />

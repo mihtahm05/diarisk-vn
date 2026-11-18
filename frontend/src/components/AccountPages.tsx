@@ -1,17 +1,88 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Eye, Loader2 } from "lucide-react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Check, CheckCircle2, CircleAlert, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Header from "./Header";
-import { Modal } from "./Modal";
-import Pagination from "./Pagination";
-import PredictionResultCard, { RiskBadge } from "./Sidebar";
-import { Notice, SelectField, TextField } from "./FormControls";
 import { useAuth } from "../context/AuthContext";
 import { ApiError } from "../services/api";
 import { authService } from "../services/authService";
-import { mlService } from "../services/mlService";
-import { formatDateTime } from "../utils/validators";
-import type { PredictionListItem, PredictionResult, RiskLevel } from "../types";
+import { formatDate } from "../utils/validators";
+import "../dashboard.css";
+
+/** Trang lịch sử dự đoán cá nhân nằm ở HistoryPages.tsx; xuất lại đây để App.tsx không phải sửa import. */
+export { OwnHistoryPage } from "./HistoryPages";
+
+type Message = { tone: "error" | "success"; text: string };
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Quản trị viên",
+  doctor: "Cán bộ y tế",
+  user: "Người dùng phổ thông",
+};
+
+function initials(name?: string): string {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const first = parts[0][0] ?? "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] ?? "" : "";
+  return (first + last).toUpperCase();
+}
+
+/** Khối thông báo lỗi / thành công, cùng kiểu với trang dự đoán. */
+function MessageBox({ message }: { message: Message | null }) {
+  if (!message) return null;
+  const isError = message.tone === "error";
+  return (
+    <div role={isError ? "alert" : "status"} className={`dg-notice ${isError ? "dg-notice--error" : "dg-notice--success"}`}>
+      {isError ? <CircleAlert aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
+      <span>{message.text}</span>
+    </div>
+  );
+}
+
+/** Một mục = một hàng: tên + mô tả bên trái, ô nhập bên phải (giống trang dự đoán). */
+function Row({ label, hint, htmlFor, error, children }: {
+  label: string;
+  hint?: string;
+  htmlFor: string;
+  error?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="dg-row">
+      <div className="dg-row-text">
+        <label className="dg-row-label" htmlFor={htmlFor}>{label}</label>
+        {hint && <p className="dg-row-hint">{hint}</p>}
+      </div>
+      <div className="dg-row-control dg-row-control--text">
+        {children}
+        {error && <p className="dg-field-error" id={`${htmlFor}-error`}>{error}</p>}
+      </div>
+    </div>
+  );
+}
+
+/** Ô mật khẩu có nút hiện / ẩn. */
+function PasswordInput({ id, value, onChange, autoComplete, minLength, invalid }: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete: string;
+  minLength?: number;
+  invalid?: boolean;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="dg-pw">
+      <input id={id} className="dg-input" type={show ? "text" : "password"} autoComplete={autoComplete} value={value}
+        onChange={(event) => onChange(event.target.value)} minLength={minLength} required
+        aria-invalid={invalid} aria-describedby={invalid ? `${id}-error` : undefined} />
+      <button type="button" className="dg-pw-toggle" onClick={() => setShow((previous) => !previous)}
+        aria-label={show ? "Ẩn mật khẩu" : "Hiện mật khẩu"} aria-pressed={show}>
+        {show ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+      </button>
+    </div>
+  );
+}
 
 export function ProfilePage() {
   const { user, refreshUser } = useAuth();
@@ -20,8 +91,10 @@ export function ProfilePage() {
   const [birthdate, setBirthdate] = useState(user?.birthdate || "");
   const [gender, setGender] = useState(user?.gender || "");
   const [address, setAddress] = useState(user?.address || "");
-  const [message, setMessage] = useState<{ tone: "error" | "success"; text: string } | null>(null);
+  const [workplace, setWorkplace] = useState(user?.workplace || "");
+  const [message, setMessage] = useState<Message | null>(null);
   const [busy, setBusy] = useState(false);
+  const isDoctor = user?.role === "doctor";
 
   useEffect(() => {
     setName(user?.name || "");
@@ -29,14 +102,25 @@ export function ProfilePage() {
     setBirthdate(user?.birthdate || "");
     setGender(user?.gender || "");
     setAddress(user?.address || "");
+    setWorkplace(user?.workplace || "");
   }, [user]);
+
+  const dirty = name !== (user?.name || "")
+    || phoneNumber !== (user?.phoneNumber || "")
+    || birthdate !== (user?.birthdate || "")
+    || gender !== (user?.gender || "")
+    || address !== (user?.address || "")
+    || (isDoctor && workplace !== (user?.workplace || ""));
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setMessage(null);
     try {
-      await authService.updateProfile({ name, phoneNumber, birthdate, gender: gender === "male" || gender === "female" ? gender : undefined, address });
+      await authService.updateProfile({
+        name, phoneNumber, birthdate, gender: gender === "male" || gender === "female" ? gender : undefined, address,
+        ...(isDoctor ? { workplace: workplace.trim() } : {}),
+      });
       await refreshUser();
       setMessage({ tone: "success", text: "Đã cập nhật thông tin tài khoản." });
     } catch (error) {
@@ -49,20 +133,82 @@ export function ProfilePage() {
   return (
     <div>
       <Header title="Thông tin cá nhân" subtitle="Cập nhật thông tin liên hệ và hồ sơ của bạn" />
-      <form className="panel max-w-2xl space-y-4" onSubmit={submit}>
-        {message && <Notice tone={message.tone}>{message.text}</Notice>}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <TextField id="profile-name" label="Họ và tên" value={name} onChange={(event) => setName(event.target.value)} required maxLength={120} />
-          <TextField id="profile-email" label="Email (chỉ xem)" value={user?.email || ""} readOnly />
-          <TextField id="profile-phone" label="Số điện thoại" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} />
-          <TextField id="profile-birthdate" label="Ngày sinh" type="date" value={birthdate} onChange={(event) => setBirthdate(event.target.value)} />
-          <SelectField id="profile-gender" label="Giới tính" value={gender} onChange={(event) => setGender(event.target.value)}>
-            <option value="">Chưa cung cấp</option><option value="female">Nữ</option><option value="male">Nam</option>
-          </SelectField>
-          <TextField id="profile-address" label="Địa chỉ" value={address} onChange={(event) => setAddress(event.target.value)} maxLength={500} />
+      <div className="dg-sections dg-wrap">
+        <MessageBox message={message} />
+
+        {/* Thanh thông tin tài khoản nằm ngang ở phía trên */}
+        <div className="dg-profile-banner">
+          <div className="dg-profile-banner-left">
+            {user?.avatar
+              ? <img className="dg-avatar dg-avatar--lg" src={user.avatar} alt="" />
+              : <span className="dg-avatar dg-avatar--lg" aria-hidden="true">{initials(user?.name)}</span>}
+            <div>
+              <p className="dg-aside-name">{user?.name}</p>
+              <p className="dg-aside-sub">{user?.email}</p>
+            </div>
+          </div>
+          <div className="dg-profile-banner-right">
+            <div className="dg-profile-meta-item">
+              <span className="dg-profile-meta-label">Vai trò</span>
+              <span className="dg-profile-meta-value">{ROLE_LABELS[user?.role ?? "user"] ?? "Người dùng"}</span>
+            </div>
+            {isDoctor && user?.staffCode && (
+              <div className="dg-profile-meta-item">
+                <span className="dg-profile-meta-label">Mã cán bộ</span>
+                <span className="dg-profile-meta-value">{user.staffCode}</span>
+              </div>
+            )}
+            {user?.createdAt && (
+              <div className="dg-profile-meta-item">
+                <span className="dg-profile-meta-label">Ngày tạo</span>
+                <span className="dg-profile-meta-value">{formatDate(user.createdAt)}</span>
+              </div>
+            )}
+          </div>
         </div>
-        <button className="btn-primary" disabled={busy}>{busy && <Loader2 className="h-4 w-4 animate-spin" />} Lưu thay đổi</button>
-      </form>
+
+        {/* Form chỉnh sửa thông tin */}
+        <form onSubmit={submit}>
+          <div className="dg-card">
+            <Row label="Họ và tên" htmlFor="profile-name">
+              <input id="profile-name" className="dg-input" value={name} onChange={(event) => setName(event.target.value)} required maxLength={120} />
+            </Row>
+            <Row label="Email" hint="Dùng để đăng nhập, không thể thay đổi" htmlFor="profile-email">
+              <input id="profile-email" className="dg-input" value={user?.email || ""} readOnly />
+            </Row>
+            {isDoctor && (
+              <>
+                <Row label="Mã cán bộ" hint="Mã số cán bộ / nhân viên y tế, không thể thay đổi" htmlFor="profile-staff-code">
+                  <input id="profile-staff-code" className="dg-input" value={user?.staffCode || ""} readOnly />
+                </Row>
+                <Row label="Đơn vị công tác" hint="Bệnh viện hoặc trạm y tế" htmlFor="profile-workplace">
+                  <input id="profile-workplace" className="dg-input" value={workplace} onChange={(event) => setWorkplace(event.target.value)} required maxLength={200} />
+                </Row>
+              </>
+            )}
+            <Row label="Số điện thoại" htmlFor="profile-phone">
+              <input id="profile-phone" className="dg-input" type="tel" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} />
+            </Row>
+            <Row label="Ngày sinh" htmlFor="profile-birthdate">
+              <input id="profile-birthdate" className="dg-input" type="date" value={birthdate} onChange={(event) => setBirthdate(event.target.value)} />
+            </Row>
+            <Row label="Giới tính" htmlFor="profile-gender">
+              <select id="profile-gender" className="dg-input" value={gender} onChange={(event) => setGender(event.target.value)}>
+                <option value="">Chưa cung cấp</option><option value="female">Nữ</option><option value="male">Nam</option>
+              </select>
+            </Row>
+            <Row label="Địa chỉ" htmlFor="profile-address">
+              <input id="profile-address" className="dg-input" value={address} onChange={(event) => setAddress(event.target.value)} maxLength={500} />
+            </Row>
+            <div className="dg-card-foot">
+              <span className="dg-foot-note">{dirty ? "Có thay đổi chưa lưu" : "Chưa có thay đổi"}</span>
+              <button className="dg-submit" disabled={busy || !dirty}>
+                {busy && <Loader2 className="dg-spin" aria-hidden="true" />} Lưu thay đổi
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -73,8 +219,12 @@ export function PasswordPage() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [message, setMessage] = useState<{ tone: "error" | "success"; text: string } | null>(null);
+  const [message, setMessage] = useState<Message | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const mismatch = confirmPassword !== "" && newPassword !== confirmPassword;
+  const longEnough = newPassword.length >= 8;
+  const matches = confirmPassword !== "" && newPassword === confirmPassword;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -97,82 +247,40 @@ export function PasswordPage() {
 
   return (
     <div>
-      <Header title="Đổi mật khẩu" subtitle="Mật khẩu mới sẽ được mã hóa trước khi lưu" />
-      <form className="panel max-w-xl space-y-4" onSubmit={submit}>
-        {message && <Notice tone={message.tone}>{message.text}</Notice>}
-        <TextField id="current-password" label="Mật khẩu hiện tại" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required />
-        <TextField id="new-password" label="Mật khẩu mới (ít nhất 8 ký tự)" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={8} required />
-        <TextField id="confirm-password" label="Xác nhận mật khẩu mới" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} required />
-        <button className="btn-primary" disabled={busy}>{busy && <Loader2 className="h-4 w-4 animate-spin" />} Cập nhật mật khẩu</button>
-      </form>
-    </div>
-  );
-}
-
-export function OwnHistoryPage() {
-  const [page, setPage] = useState(1);
-  const [risk, setRisk] = useState<RiskLevel | "">("");
-  const [data, setData] = useState<{ items: PredictionListItem[]; total: number; page: number; pageSize: number } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [detail, setDetail] = useState<PredictionResult | null>(null);
-  const [busyId, setBusyId] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      setData(await mlService.history({ scope: "mine", riskLevel: risk, page }));
-    } catch (cause) {
-      setData(null);
-      setError(cause instanceof ApiError ? cause.message : "Không tải được lịch sử dự đoán.");
-    } finally {
-      setLoading(false);
-    }
-  }, [page, risk]);
-  useEffect(() => { void load(); }, [load]);
-
-  async function showDetail(id: string) {
-    setBusyId(id);
-    setError("");
-    try {
-      setDetail(await mlService.detail(id));
-    } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "Không tải được chi tiết dự đoán.");
-    } finally {
-      setBusyId("");
-    }
-  }
-
-  return (
-    <div>
-      <Header title="Lịch sử dự đoán cá nhân" subtitle="Chỉ hiển thị các lần tự đánh giá của tài khoản đang đăng nhập" />
-      {error && <div className="mb-3"><Notice tone="error">{error}</Notice></div>}
-      <section className="panel">
-        <SelectField id="history-risk" label="Lọc theo mức nguy cơ" className="mb-4 max-w-xs" value={risk} onChange={(event) => { setRisk(event.target.value as RiskLevel | ""); setPage(1); }}>
-          <option value="">Mọi mức nguy cơ</option><option value="low">Thấp</option><option value="medium">Trung bình</option><option value="high">Cao</option>
-        </SelectField>
-        {loading ? <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-brand-600" /></div>
-          : !data?.items.length ? <p className="py-8 text-center text-sm text-slate-500">Chưa có dữ liệu dự đoán nào.</p>
-            : <>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px]">
-                  <thead><tr className="border-b border-slate-200"><th className="th">Thời gian</th><th className="th">Chế độ</th><th className="th">Mức nguy cơ</th><th className="th">Xác suất</th><th className="th" /></tr></thead>
-                  <tbody className="divide-y divide-slate-100">{data.items.map((item) => (
-                    <tr key={item.predictionId}>
-                      <td className="td">{formatDateTime(item.createdAt)}</td>
-                      <td className="td">{item.mode === "clinical" ? "Lâm sàng" : "Phi lâm sàng"}</td>
-                      <td className="td"><RiskBadge level={item.riskLevel} /></td>
-                      <td className="td">{(item.probability * 100).toFixed(1)}%</td>
-                      <td className="td text-right"><button className="btn-ghost !px-2 !py-1" aria-label="Xem chi tiết" onClick={() => void showDetail(item.predictionId)} disabled={busyId === item.predictionId}>{busyId === item.predictionId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}</button></td>
-                    </tr>
-                  ))}</tbody>
-                </table>
+      <Header title="Đổi mật khẩu" subtitle="Mật khẩu mới được mã hóa trước khi lưu. Sau khi đổi, bạn sẽ được đăng xuất để đăng nhập lại." />
+      <div className="dg-sections dg-wrap">
+        <MessageBox message={message} />
+        <div className="dg-split">
+          <form onSubmit={submit}>
+            <div className="dg-card">
+              <Row label="Mật khẩu hiện tại" htmlFor="current-password">
+                <PasswordInput id="current-password" autoComplete="current-password" value={currentPassword} onChange={setCurrentPassword} />
+              </Row>
+              <Row label="Mật khẩu mới" htmlFor="new-password">
+                <PasswordInput id="new-password" autoComplete="new-password" value={newPassword} onChange={setNewPassword} minLength={8} />
+              </Row>
+              <Row label="Xác nhận mật khẩu mới" htmlFor="confirm-password" error={mismatch ? "Mật khẩu xác nhận chưa khớp." : undefined}>
+                <PasswordInput id="confirm-password" autoComplete="new-password" value={confirmPassword} onChange={setConfirmPassword}
+                  minLength={8} invalid={mismatch} />
+              </Row>
+              <div className="dg-card-foot">
+                <span className="dg-foot-note" />
+                <button className="dg-submit" disabled={busy}>
+                  {busy && <Loader2 className="dg-spin" aria-hidden="true" />} Cập nhật mật khẩu
+                </button>
               </div>
-              <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} />
-            </>}
-      </section>
-      {detail && <Modal title="Chi tiết dự đoán" wide onClose={() => setDetail(null)}><PredictionResultCard result={detail} /></Modal>}
+            </div>
+          </form>
+
+          <aside className="dg-aside dg-aside--left">
+            <h2 className="dg-aside-title">Yêu cầu mật khẩu</h2>
+            <ul className="dg-checks">
+              <li className={longEnough ? "is-met" : undefined}><span aria-hidden="true"><Check /></span>Ít nhất 8 ký tự</li>
+              <li className={matches ? "is-met" : undefined}><span aria-hidden="true"><Check /></span>Mật khẩu xác nhận trùng khớp</li>
+            </ul>
+          </aside>
+        </div>
+      </div>
     </div>
   );
 }

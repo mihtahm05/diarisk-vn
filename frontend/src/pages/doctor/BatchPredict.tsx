@@ -11,7 +11,7 @@ import type { BatchResultRow, BatchValidation } from "../../types";
 const MAX_BYTES = 10 * 1024 * 1024;
 
 /** UC-07: tải file .xlsx → báo cáo kiểm tra → xác nhận dự đoán các dòng hợp lệ → bảng kết quả. Việc kiểm tra và dự đoán do backend thực hiện. */
-export default function BatchPredict() {
+export default function BatchPredict({ hideHeader = false }: { hideHeader?: boolean }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<"" | "validate" | "confirm" | "template">("");
   const [error, setError] = useState("");
@@ -36,7 +36,7 @@ export default function BatchPredict() {
     } finally { setBusy(""); }
   }
 
-  async function confirm() {
+  async function confirmPrediction() {
     if (!report || busy) return;
     setBusy("confirm"); setError("");
     try {
@@ -55,7 +55,7 @@ export default function BatchPredict() {
 
   return (
     <div>
-      <Header title="Dự đoán hàng loạt" subtitle="Tải tệp Excel chứa thông tin khảo sát của nhiều bệnh nhân để dự đoán cùng lúc" />
+      {!hideHeader && <Header title="Dự đoán hàng loạt" subtitle="Tải tệp Excel chứa thông tin khảo sát của nhiều bệnh nhân để dự đoán cùng lúc" />}
       <div className="space-y-4">
         <Notice tone="info">Model sử dụng dữ liệu BRFSS tự khai báo, chưa được kiểm định lâm sàng tại Việt Nam; kết quả không phải chẩn đoán.</Notice>
         {error && <Notice tone="error">{error}</Notice>}
@@ -75,7 +75,11 @@ export default function BatchPredict() {
                 <span className="font-semibold">{report ? "Tải lại file mới" : "Chọn tệp Excel (.xlsx) để tải lên"}</span>
                 <span className="text-xs text-slate-500">Tối đa 10 MB</span>
                 <input ref={inputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="sr-only"
-                  onChange={(e) => onFile(e.target.files?.[0])} disabled={busy !== ""} />
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = ""; // cho phép chọn lại đúng tệp đó sau khi báo lỗi
+                    void onFile(file);
+                  }} disabled={busy !== ""} />
               </label>
             )}
           </section>
@@ -104,7 +108,7 @@ export default function BatchPredict() {
 
             <div className="mt-4 flex flex-wrap gap-2">
               {report.validRows > 0 ? (
-                <button className="btn-primary" onClick={confirm} disabled={busy !== ""}>
+                <button className="btn-primary" onClick={confirmPrediction} disabled={busy !== ""}>
                   {busy === "confirm" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Xác nhận dự đoán cho các dòng hợp lệ
                 </button>
               ) : (

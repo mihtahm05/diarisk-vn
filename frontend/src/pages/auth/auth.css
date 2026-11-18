@@ -1,0 +1,325 @@
+/* CSS cho các trang đăng nhập và đăng ký. Tiền tố fg- (dùng chung) và rg- (riêng đăng ký) nên không ảnh hưởng style.css. */
+.fg-page {
+  --fg-blue: #3f78d6;
+  --fg-blue-soft: #6c9be6;
+  --fg-teal: #2fa8c4;
+  --fg-ink: #1b2a4a;
+  --fg-muted: #51607d;
+  --fg-line: #d3e0f5;
+  --fg-error: #d14343;
+  --fg-gradient: linear-gradient(135deg, #4f86e8 0%, #2fa8c4 100%);
+
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 24px;
+  font-family: "Inter", "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--fg-ink);
+  /* Ảnh nền: frontend/src/assets/images/bg.png (neo góc dưới trái để luôn thấy máy đo đường huyết) */
+  background:
+    url("../../assets/images/bg.png") left bottom / cover no-repeat,
+    #cfe6fa;
+  background-attachment: fixed;
+}
+
+.fg-shell {
+  width: 100%;
+  max-width: 1240px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 480px);
+  align-items: center;
+  gap: 64px;
+}
+
+/* ---------- Bên trái: nằm ở nửa trên để không đè lên hình minh họa của ảnh nền ---------- */
+.fg-brand {
+  align-self: start;
+  margin-top: clamp(0px, 3vh, 36px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.fg-logo {
+  width: 116px;
+  height: auto;
+  filter: drop-shadow(0 8px 16px rgba(63, 169, 238, 0.35));
+}
+
+.fg-title {
+  margin: 10px 0 0;
+  font-size: clamp(2.3rem, 3.4vw, 3.1rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--fg-teal);
+}
+.fg-title span { color: var(--fg-ink); }
+
+.fg-slogan {
+  margin: 10px 0 0;
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1.6;
+  color: var(--fg-ink);
+}
+
+.fg-art {
+  margin-top: 24px;
+  width: 100%;
+  max-width: 460px;
+  height: auto;
+  object-fit: contain;
+}
+
+/* ---------- Card ---------- */
+.fg-card {
+  background: rgba(255, 255, 255, 0.94);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(95, 155, 232, 0.35);
+  border-radius: 24px;
+  padding: 40px 40px 34px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.8) inset,
+    0 24px 60px rgba(40, 90, 170, 0.22);
+}
+.fg-card h2 {
+  margin: 0;
+  text-align: center;
+  font-size: 1.9rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  background: var(--fg-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.fg-subtitle {
+  margin: 10px 0 26px;
+  text-align: center;
+  font-size: 0.95rem;
+  color: var(--fg-muted);
+}
+
+.fg-form { display: flex; flex-direction: column; gap: 16px; }
+.fg-control { display: flex; flex-direction: column; gap: 6px; }
+
+.fg-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 50px;
+  padding: 0 16px;
+  background: #f7faff;
+  border: 1px solid var(--fg-line);
+  border-radius: 12px;
+  color: #6f86b3;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.fg-field:hover { border-color: #b7cdf0; }
+.fg-field:focus-within {
+  background: #fff;
+  border-color: var(--fg-blue-soft);
+  box-shadow: 0 0 0 4px rgba(79, 134, 232, 0.16);
+  color: var(--fg-blue);
+}
+.fg-field[data-invalid="true"] { border-color: var(--fg-error); }
+.fg-field-icon { display: grid; place-items: center; flex: none; }
+.fg-field-icon svg { width: 20px; height: 20px; }
+.fg-field input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.98rem;
+  color: var(--fg-ink);
+}
+.fg-field input::placeholder { color: #8795b0; }
+
+.fg-eye {
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: #6f86b3;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: color 0.15s, background 0.15s;
+}
+.fg-eye:hover { color: var(--fg-blue); background: rgba(79, 134, 232, 0.1); }
+.fg-eye svg { width: 20px; height: 20px; }
+.fg-eye:focus-visible { outline: 2px solid var(--fg-blue); }
+
+.fg-field-error { margin: 0 0 0 4px; font-size: 0.8rem; color: var(--fg-error); }
+
+.fg-options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.88rem;
+}
+.fg-remember { display: inline-flex; align-items: center; gap: 8px; color: var(--fg-muted); cursor: pointer; }
+.fg-remember input { width: 16px; height: 16px; accent-color: var(--fg-blue); }
+.fg-forgot { color: var(--fg-blue); font-weight: 500; text-decoration: none; }
+.fg-forgot:hover { text-decoration: underline; }
+
+.fg-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 54px;
+  margin-top: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--fg-gradient);
+  color: #fff;
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgba(63, 120, 214, 0.35);
+  transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
+}
+.fg-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+  box-shadow: 0 14px 28px rgba(63, 120, 214, 0.42);
+}
+.fg-submit:active:not(:disabled) { transform: translateY(0); }
+.fg-submit:focus-visible { outline: 3px solid rgba(79, 134, 232, 0.45); outline-offset: 2px; }
+.fg-submit:disabled { opacity: 0.7; cursor: not-allowed; }
+.fg-spin { width: 20px; height: 20px; animation: fg-rotate 0.9s linear infinite; }
+@keyframes fg-rotate { to { transform: rotate(360deg); } }
+
+.fg-switch { margin: 22px 0 0; text-align: center; font-size: 0.95rem; color: var(--fg-muted); }
+.fg-switch a { color: var(--fg-blue); font-weight: 600; text-decoration: none; }
+.fg-switch a:hover { text-decoration: underline; }
+
+.fg-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+}
+.fg-alert svg { width: 18px; height: 18px; flex: none; margin-top: 1px; }
+.fg-alert-error { background: #fdecec; color: #a12828; }
+.fg-alert-success { background: #e8f6ee; color: #1c6b3f; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 960px) {
+  .fg-page { background-position: center bottom, 0 0; background-attachment: scroll; }
+  .fg-shell { grid-template-columns: 1fr; gap: 24px; max-width: 520px; }
+  .fg-brand { align-self: center; margin-top: 0; }
+  .fg-art { display: none; }
+  .fg-logo { width: 84px; }
+}
+@media (max-width: 520px) {
+  .fg-card { padding: 28px 20px; border-radius: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fg-spin { animation: none; }
+  .fg-submit, .fg-field, .fg-eye { transition: none; }
+}
+
+/* =====================  Phần riêng của trang đăng ký (tiền tố rg-)  ===================== */
+.fg-shell.rg-shell {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 560px);
+}
+
+.fg-card.rg-card { padding: 32px 40px 28px; }
+
+/* Logo + chữ bên trái: dính phía trên, không bị lệch khi form dài ra (tab Cán bộ y tế) */
+.rg-shell .fg-brand {
+  align-self: start;
+  position: sticky;
+  top: 3vh;
+  margin: 0;
+  padding-top: 9vh;
+}
+.rg-card h2 { font-size: 1.75rem; }
+.rg-card .fg-subtitle { margin: 4px 0 16px; font-size: 0.93rem; }
+
+/* Chọn loại tài khoản */
+.rg-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 16px 0 12px;
+  padding: 4px;
+  gap: 4px;
+  border-radius: 14px;
+  background: #e4edfb;
+}
+.rg-tab {
+  height: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #55607a;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.rg-tab:hover { color: var(--fg-ink); }
+.rg-tab[aria-pressed="true"] {
+  background: #fff;
+  color: var(--fg-blue);
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(40, 90, 170, 0.18);
+}
+.rg-tab:focus-visible { outline: 2px solid var(--fg-blue); outline-offset: 1px; }
+
+.rg-card .fg-form { gap: 12px; }
+.rg-card .fg-field { height: 46px; }
+
+/* Ngày sinh + giới tính nằm cùng một hàng */
+.rg-birth-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 24px;
+}
+.rg-gender {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  height: 46px;
+  color: var(--fg-muted);
+}
+.rg-radio { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.rg-radio input { width: 18px; height: 18px; accent-color: var(--fg-blue); }
+.rg-gender-error { grid-column: 1 / -1; margin: 6px 0 0 4px; font-size: 0.8rem; color: var(--fg-error); }
+
+.rg-card .fg-submit {
+  align-self: center;
+  width: 264px;
+  max-width: 100%;
+  height: 50px;
+  margin-top: 6px;
+}
+.rg-card .fg-switch { margin-top: 16px; font-size: 0.93rem; }
+
+@media (max-width: 960px) {
+  .fg-shell.rg-shell { grid-template-columns: 1fr; max-width: 560px; }
+  .rg-shell .fg-brand { position: static; align-self: center; padding-top: 0; }
+}
+@media (max-width: 520px) {
+  .fg-card.rg-card { padding: 24px 18px; }
+  .rg-birth-row { grid-template-columns: 1fr; row-gap: 8px; }
+  .rg-gender { height: auto; }
+}
