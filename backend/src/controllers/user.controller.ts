@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { getDb } from '../config/database';
 import { recordActivity } from '../utils/activityLog';
 import { normalizeRole } from '../utils/objectId';
+import { isStrongPassword, PASSWORD_REQUIREMENT_MESSAGE } from '../utils/password';
 
 // =====================================================
 // 1. VALIDATION
@@ -283,7 +284,7 @@ export async function updateMe(
 
 const passwordSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(8).max(128),
+  newPassword: z.string().refine(isStrongPassword, PASSWORD_REQUIREMENT_MESSAGE),
   confirmPassword: z.string().min(1),
 }).refine(
   (value) => value.newPassword === value.confirmPassword,

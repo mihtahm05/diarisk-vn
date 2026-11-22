@@ -15,7 +15,7 @@ export default function PatientPredictLayout() {
   const [activeTab, setActiveTab] = useState<PredictionTab>("non-clinical");
 
   return (
-    <div>
+    <div className="dg-patient-predict">
       <Header
         title="Dự đoán cho bệnh nhân"
         subtitle="Thực hiện đánh giá và dự đoán nguy cơ cho bệnh nhân qua các chế độ khác nhau"

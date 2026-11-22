@@ -8,13 +8,14 @@ import { getDb } from '../config/database';
 import { env } from '../config/env';
 import { recordActivity } from '../utils/activityLog';
 import { normalizeRole } from '../utils/objectId';
+import { isStrongPassword, PASSWORD_REQUIREMENT_MESSAGE } from '../utils/password';
 
 const registerSchema = z.object({
   role: z.enum(['user', 'doctor']).default('user'),
   name: z.string().trim().min(2).max(120),
   email: z.string().trim().email().max(254),
   phoneNumber: z.string().trim().regex(/^\+?[\d\s().-]{8,20}$/),
-  password: z.string().min(8).max(128),
+  password: z.string().refine(isStrongPassword, PASSWORD_REQUIREMENT_MESSAGE),
   confirmPassword: z.string().min(1).max(128),
   birthdate: z.string().min(1),
   gender: z.enum(['male', 'female']),

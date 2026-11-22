@@ -1,11 +1,11 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Check, CheckCircle2, CircleAlert, Eye, EyeOff, Loader2 } from "lucide-react";
+import { CheckCircle2, CircleAlert, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Header from "./Header";
 import { useAuth } from "../context/AuthContext";
 import { ApiError } from "../services/api";
 import { authService } from "../services/authService";
-import { formatDate } from "../utils/validators";
+import { formatDate, formatDateOfBirth, isStrongPassword, localISODate, parseDateOfBirth, PASSWORD_REQUIREMENT_MESSAGE } from "../utils/validators";
 import "../dashboard.css";
 
 /** Trang lịch sử dự đoán cá nhân nằm ở HistoryPages.tsx; xuất lại đây để App.tsx không phải sửa import. */
@@ -88,7 +88,7 @@ export function ProfilePage() {
   const { user, refreshUser } = useAuth();
   const [name, setName] = useState(user?.name || "");
   const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber || "");
-  const [birthdate, setBirthdate] = useState(user?.birthdate || "");
+  const [birthdate, setBirthdate] = useState(formatDateOfBirth(user?.birthdate));
   const [gender, setGender] = useState(user?.gender || "");
   const [address, setAddress] = useState(user?.address || "");
   const [staffCode, setStaffCode] = useState(user?.staffCode || "");
@@ -100,7 +100,7 @@ export function ProfilePage() {
   useEffect(() => {
     setName(user?.name || "");
     setPhoneNumber(user?.phoneNumber || "");
-    setBirthdate(user?.birthdate || "");
+    setBirthdate(formatDateOfBirth(user?.birthdate));
     setGender(user?.gender || "");
     setAddress(user?.address || "");
     setStaffCode(user?.staffCode || "");
@@ -109,7 +109,7 @@ export function ProfilePage() {
 
   const dirty = name !== (user?.name || "")
     || phoneNumber !== (user?.phoneNumber || "")
-    || birthdate !== (user?.birthdate || "")
+    || birthdate !== formatDateOfBirth(user?.birthdate)
     || gender !== (user?.gender || "")
     || address !== (user?.address || "")
     || (isDoctor && staffCode !== (user?.staffCode || ""))
@@ -117,11 +117,24 @@ export function ProfilePage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    const birthdateIso = birthdate ? parseDateOfBirth(birthdate) : "";
+    if (birthdate && !birthdateIso) {
+      setMessage({ tone: "error", text: "Ngày sinh không hợp lệ. Vui lòng nhập theo định dạng dd/mm/yyyy." });
+      return;
+    }
+    if (birthdateIso && birthdateIso > localISODate()) {
+      setMessage({ tone: "error", text: "Ngày sinh không thể ở tương lai." });
+      return;
+    }
+    if (gender !== "male" && gender !== "female") {
+      setMessage({ tone: "error", text: "Vui lòng chọn giới tính Nam hoặc Nữ trước khi lưu thông tin." });
+      return;
+    }
     setBusy(true);
     setMessage(null);
     try {
       await authService.updateProfile({
-        name, phoneNumber, birthdate, gender: gender === "male" || gender === "female" ? gender : undefined, address,
+        name, phoneNumber, birthdate: birthdateIso || "", gender: gender === "male" || gender === "female" ? gender : undefined, address,
         ...(isDoctor ? { staffCode: staffCode.trim(), workplace: workplace.trim() } : {}),
       });
       await refreshUser();
@@ -194,11 +207,12 @@ export function ProfilePage() {
               <input id="profile-phone" className="dg-input" type="tel" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} />
             </Row>
             <Row label="Ngày sinh" htmlFor="profile-birthdate">
-              <input id="profile-birthdate" className="dg-input" type="date" value={birthdate} onChange={(event) => setBirthdate(event.target.value)} />
+              <input id="profile-birthdate" className="dg-input" type="text" inputMode="numeric" maxLength={10}
+                placeholder="dd/mm/yyyy" value={birthdate} onChange={(event) => setBirthdate(event.target.value)} />
             </Row>
             <Row label="Giới tính" htmlFor="profile-gender">
               <select id="profile-gender" className="dg-input" value={gender} onChange={(event) => setGender(event.target.value)}>
-                <option value="">Chưa cung cấp</option><option value="female">Nữ</option><option value="male">Nam</option>
+                <option value="">Chọn giới tính</option><option value="male">Nam</option><option value="female">Nữ</option>
               </select>
             </Row>
             <Row label="Địa chỉ" htmlFor="profile-address">
@@ -227,12 +241,13 @@ export function PasswordPage() {
   const [busy, setBusy] = useState(false);
 
   const mismatch = confirmPassword !== "" && newPassword !== confirmPassword;
-  const longEnough = newPassword.length >= 8;
-  const matches = confirmPassword !== "" && newPassword === confirmPassword;
-
   async function submit(event: FormEvent) {
     event.preventDefault();
     setMessage(null);
+    if (!isStrongPassword(newPassword)) {
+      setMessage({ tone: "error", text: PASSWORD_REQUIREMENT_MESSAGE });
+      return;
+    }
     if (newPassword !== confirmPassword) {
       setMessage({ tone: "error", text: "Mật khẩu mới và xác nhận không khớp." });
       return;
@@ -254,7 +269,7 @@ export function PasswordPage() {
       <Header title="Đổi mật khẩu" subtitle="Mật khẩu mới được mã hóa trước khi lưu. Sau khi đổi, bạn sẽ được đăng xuất để đăng nhập lại." />
       <div className="dg-sections dg-wrap">
         <MessageBox message={message} />
-        <div className="dg-split">
+        <div>
           <form onSubmit={submit}>
             <div className="dg-card">
               <Row label="Mật khẩu hiện tại" htmlFor="current-password">
@@ -276,13 +291,6 @@ export function PasswordPage() {
             </div>
           </form>
 
-          <aside className="dg-aside dg-aside--left">
-            <h2 className="dg-aside-title">Yêu cầu mật khẩu</h2>
-            <ul className="dg-checks">
-              <li className={longEnough ? "is-met" : undefined}><span aria-hidden="true"><Check /></span>Ít nhất 8 ký tự</li>
-              <li className={matches ? "is-met" : undefined}><span aria-hidden="true"><Check /></span>Mật khẩu xác nhận trùng khớp</li>
-            </ul>
-          </aside>
         </div>
       </div>
     </div>

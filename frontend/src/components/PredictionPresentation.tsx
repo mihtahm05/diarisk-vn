@@ -81,7 +81,7 @@ export function PredictionResultView({ result, onReset }: {
         <div className="dg-notice dg-state-notice" role="note">
           <AlertTriangle aria-hidden="true" />
           <span>
-            <strong>Lưu ý:</strong> Kết quả chỉ mang tính tham khảo, không phải chẩn đoán xác định.
+            <strong>Lưu ý:</strong> Mô hình được huấn luyện trên dữ liệu BRFSS tự khai báo, chưa được kiểm định lâm sàng tại Việt Nam. Kết quả chỉ mang tính tham khảo, không phải chẩn đoán thay thế cho bác sĩ.
             {result.warning && <span className="dg-result-warning-detail"> {result.warning}</span>}
           </span>
         </div>
@@ -106,7 +106,7 @@ export function PredictionResultView({ result, onReset }: {
             <p className="dg-risk-level">Mức nguy cơ {riskLabels[result.riskLevel].toLowerCase()}</p>
             <dl className="dg-risk-meta">
               <div>
-                <dt>Ngưỡng phân loại</dt>
+                <dt>Ngưỡng mô hình</dt>
                 <dd>{result.threshold === undefined ? "—" : `${(result.threshold * 100).toFixed(2)}%`}</dd>
               </div>
               <div>

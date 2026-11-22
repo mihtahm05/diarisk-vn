@@ -13,9 +13,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 MODEL_DIR = Path(os.getenv("MODEL_DIR", Path(__file__).resolve().parent / "model"))
 DISCLAIMER = (
-    "Mô hình ước tính xác suất tự khai đã được chẩn đoán tiểu đường trong dữ liệu BRFSS; "
-    "chưa được kiểm định lâm sàng tại Việt Nam. Kết quả không phải chẩn đoán và không thay thế "
-    "tư vấn của nhân viên y tế."
+    "Mô hình được huấn luyện trên dữ liệu BRFSS tự khai báo, "
+    "chưa được kiểm định lâm sàng tại Việt Nam. "
+    "Kết quả chỉ mang tính tham khảo, không phải chẩn đoán thay thế cho bác sĩ."
 )
 ADVICE = [
     "Trao đổi với nhân viên y tế để được đánh giá và tư vấn phù hợp.",
@@ -88,6 +88,11 @@ def age_group(age: float) -> int:
     if age >= 80:
         return 13
     return min(12, 2 + int((age - 25) // 5))
+
+
+def logit_probability(probability: np.ndarray) -> np.ndarray:
+    clipped = np.clip(np.asarray(probability), 1e-6, 1 - 1e-6)
+    return np.log(clipped / (1 - clipped)).reshape(-1, 1)
 
 
 def validate_and_prepare(mode: str, features: dict[str, Any]) -> tuple[dict[str, Any], pd.DataFrame]:
@@ -164,8 +169,10 @@ def predict_with_bundle(mode: str, source: dict[str, Any], row: pd.DataFrame) ->
     feature_names = list(bundle["model"].feature_names_in_)
     matrix = xgb.DMatrix(transformed, feature_names=feature_names)
     booster = bundle["model"].get_booster()
-    raw_probability = float(booster.predict(matrix)[0])
-    probability = float(bundle["calibrator"].predict_proba(np.array([[raw_probability]]))[0, 1])
+    raw_probability = float(bundle["model"].predict_proba(transformed)[0, 1])
+    probability = float(
+        bundle["calibrator"].predict_proba(logit_probability(raw_probability))[0, 1]
+    )
     if not np.isfinite(probability) or not 0 <= probability <= 1:
         raise RuntimeError("The model returned an invalid probability.")
 
@@ -187,9 +194,18 @@ def predict_with_bundle(mode: str, source: dict[str, Any], row: pd.DataFrame) ->
             "shap": contribution,
         })
     threshold = float(bundle["threshold"])
+    low_upper = 0.10
+    medium_upper = 0.20
+    risk_level = "Low" if probability < low_upper else "Medium" if probability < medium_upper else "High"
     return {
-        "risk_level": "High" if probability >= threshold else "Low",
+        "risk_level": risk_level,
         "probability": round(probability, 6),
+        "threshold": threshold,
+        "classification": "positive" if probability >= threshold else "negative",
+        "risk_thresholds": {
+            "low_upper": low_upper,
+            "medium_upper": medium_upper,
+        },
         "shap_values": shap_values,
         "advice": ADVICE,
         "model_version": bundle["version"],

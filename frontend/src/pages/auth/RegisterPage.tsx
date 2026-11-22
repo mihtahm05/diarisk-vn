@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "../../services/api";
 import { authService } from "../../services/authService";
 import type { Gender } from "../../types";
+import { isStrongPassword, localISODate, parseDateOfBirth, PASSWORD_REQUIREMENT_MESSAGE } from "../../utils/validators";
 import BrandPanel from "./components/BrandPanel";
 import FormField from "./components/FormField";
 import "./auth.css";
@@ -20,16 +21,9 @@ const registrationFields: RegistrationField[] = [
 const DUPLICATE_MESSAGE = "Email/SĐT đã được đăng ký, vui lòng sử dụng Email/SĐT khác";
 const duplicatePattern = /tồn tại|đã được|đã đăng|đã sử dụng|đã có|trùng|exist|already|duplicate|taken/i;
 
-function localDateValue(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const today = localDateValue(new Date());
+  const today = localISODate();
   const [role, setRole] = useState<"user" | "doctor">("user");
   const [name, setName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -69,12 +63,13 @@ export default function RegisterPage() {
     if (name.trim().length < 2 || name.trim().length > 120) errors.name = "Họ tên cần có từ 2 đến 120 ký tự.";
     if (!/^\+?[\d\s().-]{8,20}$/.test(phoneNumber.trim())) errors.phoneNumber = "Nhập số điện thoại hợp lệ (8–20 ký tự).";
     if (email.trim().length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors.email = "Nhập địa chỉ email hợp lệ (tối đa 254 ký tự).";
-    if (!birthdate || Number.isNaN(Date.parse(birthdate)) || birthdate > today) {
+    const birthdateIso = parseDateOfBirth(birthdate);
+    if (!birthdateIso || birthdateIso > today) {
       errors.birthdate = "Chọn ngày sinh hợp lệ, không ở tương lai.";
     }
     if (!gender) errors.gender = "Vui lòng chọn giới tính.";
     if (!address.trim() || address.trim().length > 500) errors.address = "Nhập địa chỉ (tối đa 500 ký tự).";
-    if (password.length < 8 || password.length > 128) errors.password = "Mật khẩu phải có từ 8 đến 128 ký tự.";
+    if (!isStrongPassword(password)) errors.password = PASSWORD_REQUIREMENT_MESSAGE;
     if (password !== confirmPassword) errors.confirmPassword = "Mật khẩu xác nhận không khớp.";
     if (role === "doctor" && (workplace.trim().length < 2 || workplace.trim().length > 200)) errors.workplace = "Vui lòng nhập đơn vị công tác (2–200 ký tự).";
     if (role === "doctor" && (staffCode.trim().length < 2 || staffCode.trim().length > 80)) errors.staffCode = "Vui lòng nhập mã số cán bộ / nhân viên y tế (2–80 ký tự).";
@@ -97,7 +92,7 @@ export default function RegisterPage() {
         name: name.trim(),
         phoneNumber: phoneNumber.trim(),
         email: email.trim().toLowerCase(),
-        birthdate,
+        birthdate: parseDateOfBirth(birthdate)!,
         gender: gender as Gender,
         address: address.trim(),
         password,
@@ -175,8 +170,8 @@ export default function RegisterPage() {
 
             <div className="rg-birth-row">
               <FormField id="register-birthdate" icon={<CalendarDays />} error={fieldErrors.birthdate}>
-                <input {...bind("birthdate", "register-birthdate", birthdate, setBirthdate)} type="date" autoComplete="bday" max={today}
-                  aria-label="Ngày sinh" />
+                <input {...bind("birthdate", "register-birthdate", birthdate, setBirthdate)} type="text" inputMode="numeric"
+                  autoComplete="bday" maxLength={10} placeholder="dd/mm/yyyy" aria-label="Ngày sinh (dd/mm/yyyy)" />
               </FormField>
               <fieldset className="rg-gender">
                 <legend className="sr-only">Giới tính</legend>
@@ -220,7 +215,6 @@ export default function RegisterPage() {
                 {showPassword ? <Eye /> : <EyeOff />}
               </button>
             </FormField>
-
             <FormField id="register-confirm-password" icon={<LockKeyhole />} error={fieldErrors.confirmPassword}>
               <input {...bind("confirmPassword", "register-confirm-password", confirmPassword, setConfirmPassword)} type={showConfirmPassword ? "text" : "password"} autoComplete="new-password"
                 aria-label="Xác nhận mật khẩu" placeholder="Xác nhận mật khẩu" />

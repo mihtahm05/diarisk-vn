@@ -26,6 +26,12 @@ interface MlResponse {
   risk_level?: string;
   riskLevel?: string;
   probability: number;
+  threshold?: number;
+  classification?: 'positive' | 'negative';
+  risk_thresholds?: {
+    low_upper: number;
+    medium_upper: number;
+  };
   shap_values?: Array<{ feature: string; value?: number | string; shap?: number; impact?: unknown }>;
   shapValues?: Array<{ feature: string; value?: number | string; shap?: number }>;
   advice?: string[];
@@ -131,6 +137,9 @@ function validateFeatures(mode: PredictionMode, value: unknown): { features?: Pr
 export async function runPrediction(mode: PredictionMode, features: PredictionFeatures): Promise<{
   riskLevel: RiskLevel;
   probability: number;
+  threshold: number;
+  classification: 'positive' | 'negative';
+  riskThresholds: { lowUpper: number; mediumUpper: number };
   shap: Array<{ feature: string; value?: number | string; shap: number }>;
   advice: string[];
   modelVersion: string;
@@ -151,6 +160,19 @@ export async function runPrediction(mode: PredictionMode, features: PredictionFe
   const rawRisk = (result.risk_level || result.riskLevel || '').toLowerCase();
   if (!['low', 'medium', 'high'].includes(rawRisk)) throw new Error('ML service returned an invalid risk level.');
   const riskLevel = rawRisk as RiskLevel;
+  if (typeof result.threshold !== 'number' || !Number.isFinite(result.threshold) || result.threshold < 0 || result.threshold > 1) {
+    throw new Error('ML service returned an invalid threshold.');
+  }
+  const threshold = result.threshold;
+  const classification = result.classification === 'positive' || result.classification === 'negative'
+    ? result.classification
+    : probability >= threshold ? 'positive' : 'negative';
+  const riskThresholds = result.risk_thresholds
+    ? { lowUpper: result.risk_thresholds.low_upper, mediumUpper: result.risk_thresholds.medium_upper }
+    : { lowUpper: 0.10, mediumUpper: 0.20 };
+  if (riskThresholds.lowUpper !== 0.10 || riskThresholds.mediumUpper !== 0.20) {
+    throw new Error('ML service returned unsupported risk thresholds.');
+  }
   const contributions = result.shap_values || result.shapValues || [];
   if (!Array.isArray(contributions)) throw new Error('ML service returned invalid SHAP contributions.');
   const shap = contributions.map((item) => {
@@ -176,6 +198,9 @@ export async function runPrediction(mode: PredictionMode, features: PredictionFe
   return {
     riskLevel,
     probability,
+    threshold,
+    classification,
+    riskThresholds,
     shap,
     advice,
     modelVersion: result.model_version,
@@ -194,6 +219,9 @@ function serializePrediction(prediction: Record<string, any>, privateData: {
     mode: prediction.mode,
     riskLevel: prediction.riskLevel,
     probability: prediction.probability,
+    threshold: prediction.threshold,
+    classification: prediction.classification,
+    riskThresholds: prediction.riskThresholds,
     shap: (privateData.shap || []).map((item) => ({
       feature: item.feature,
       ...(item.value === undefined ? {} : { value: item.value }),
@@ -234,6 +262,9 @@ async function savePrediction(
     mode,
     riskLevel: result.riskLevel,
     probability: result.probability,
+    threshold: result.threshold,
+    classification: result.classification,
+    riskThresholds: result.riskThresholds,
     encryptedData,
     modelVersion: result.modelVersion,
     createdAt: now,
@@ -247,6 +278,9 @@ async function savePrediction(
     mode,
     riskLevel: result.riskLevel,
     probability: result.probability,
+    threshold: result.threshold,
+    classification: result.classification,
+    riskThresholds: result.riskThresholds,
     encryptedData,
     modelVersion: result.modelVersion,
     createdAt: now,

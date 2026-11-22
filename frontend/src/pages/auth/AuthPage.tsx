@@ -8,6 +8,7 @@ import { useAuth } from "../../context/AuthContext";
 import { ApiError } from "../../services/api";
 import { authService, ROLE_HOME } from "../../services/authService";
 import type { Gender } from "../../types";
+import { isStrongPassword, localISODate, parseDateOfBirth, PASSWORD_REQUIREMENT_MESSAGE } from "../../utils/validators";
 
 type AuthMode = "login" | "register";
 type RegistrationField = "name" | "phoneNumber" | "email" | "birthdate" | "gender" | "address" |
@@ -17,13 +18,6 @@ const registrationFields: RegistrationField[] = [
   "name", "phoneNumber", "email", "birthdate", "gender", "address", "password",
   "confirmPassword", "workplace", "staffCode",
 ];
-
-function localDateValue(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
 
 function Field({
   id, label, icon, error, children,
@@ -50,7 +44,7 @@ export default function AuthPage({ mode = "login" }: { mode?: AuthMode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { signIn } = useAuth();
-  const today = localDateValue(new Date());
+  const today = localISODate();
   const [role, setRole] = useState<"user" | "doctor">("user");
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -93,12 +87,13 @@ export default function AuthPage({ mode = "login" }: { mode?: AuthMode }) {
     if (name.trim().length < 2 || name.trim().length > 120) errors.name = "Họ tên cần có từ 2 đến 120 ký tự.";
     if (!/^\+?[\d\s().-]{8,20}$/.test(phoneNumber.trim())) errors.phoneNumber = "Nhập số điện thoại hợp lệ (8–20 ký tự).";
     if (email.trim().length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors.email = "Nhập địa chỉ email hợp lệ (tối đa 254 ký tự).";
-    if (!birthdate || Number.isNaN(Date.parse(birthdate)) || birthdate > today) {
+    const birthdateIso = parseDateOfBirth(birthdate);
+    if (!birthdateIso || birthdateIso > today) {
       errors.birthdate = "Chọn ngày sinh hợp lệ, không ở tương lai.";
     }
     if (!gender) errors.gender = "Vui lòng chọn giới tính.";
     if (!address.trim() || address.trim().length > 500) errors.address = "Nhập địa chỉ (tối đa 500 ký tự).";
-    if (password.length < 8 || password.length > 128) errors.password = "Mật khẩu phải có từ 8 đến 128 ký tự.";
+    if (!isStrongPassword(password)) errors.password = PASSWORD_REQUIREMENT_MESSAGE;
     if (password !== confirmPassword) errors.confirmPassword = "Mật khẩu xác nhận không khớp.";
     if (role === "doctor" && (workplace.trim().length < 2 || workplace.trim().length > 200)) errors.workplace = "Tên đơn vị cần có từ 2 đến 200 ký tự.";
     if (role === "doctor" && (staffCode.trim().length < 2 || staffCode.trim().length > 80)) errors.staffCode = "Mã cán bộ cần có từ 2 đến 80 ký tự.";
@@ -128,7 +123,7 @@ export default function AuthPage({ mode = "login" }: { mode?: AuthMode }) {
         name: name.trim(),
         phoneNumber: phoneNumber.trim(),
         email: email.trim().toLowerCase(),
-        birthdate,
+        birthdate: parseDateOfBirth(birthdate)!,
         gender: gender as Gender,
         address: address.trim(),
         password,
@@ -280,9 +275,10 @@ export default function AuthPage({ mode = "login" }: { mode?: AuthMode }) {
                         placeholder="name@example.com" />
                     </Field>
                     <Field id="register-birthdate" label="Ngày sinh" icon={<CalendarDays />} error={fieldErrors.birthdate}>
-                      <input id="register-birthdate" type="date" autoComplete="bday" value={birthdate}
-                        max={today} onChange={(event) => updateField("birthdate", event.target.value, setBirthdate)}
-                        aria-invalid={Boolean(fieldErrors.birthdate)} aria-describedby={fieldErrors.birthdate ? "register-birthdate-error" : undefined} />
+                      <input id="register-birthdate" type="text" inputMode="numeric" autoComplete="bday" maxLength={10}
+                        placeholder="dd/mm/yyyy" value={birthdate} onChange={(event) => updateField("birthdate", event.target.value, setBirthdate)}
+                        aria-label="Ngày sinh (dd/mm/yyyy)" aria-invalid={Boolean(fieldErrors.birthdate)}
+                        aria-describedby={fieldErrors.birthdate ? "register-birthdate-error" : undefined} />
                     </Field>
                     <Field id="register-gender" label="Giới tính" icon={<UserRound />} error={fieldErrors.gender}>
                       <select id="register-gender" autoComplete="sex" value={gender}

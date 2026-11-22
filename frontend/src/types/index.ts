@@ -68,6 +68,7 @@ export interface PredictionResult {
   probability: number; // 0..1
   threshold?: number;
   classification?: "positive" | "negative";
+  riskThresholds?: { lowUpper: number; mediumUpper: number };
   shap: ShapContribution[];
   advice?: string[]; // lời khuyên do backend cung cấp
   warning?: string;

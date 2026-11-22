@@ -57,7 +57,7 @@ export default function BatchPredict({ hideHeader = false }: { hideHeader?: bool
     <div>
       {!hideHeader && <Header title="Dự đoán hàng loạt" subtitle="Tải tệp Excel chứa thông tin khảo sát của nhiều bệnh nhân để dự đoán cùng lúc" />}
       <div className="space-y-4">
-        <Notice tone="info">Model sử dụng dữ liệu BRFSS tự khai báo, chưa được kiểm định lâm sàng tại Việt Nam; kết quả không phải chẩn đoán.</Notice>
+        <Notice tone="info">Mô hình được huấn luyện trên dữ liệu BRFSS tự khai báo, chưa được kiểm định lâm sàng tại Việt Nam. Kết quả chỉ mang tính tham khảo, không phải chẩn đoán thay thế cho bác sĩ.</Notice>
         {error && <Notice tone="error">{error}</Notice>}
 
         {!rows && (

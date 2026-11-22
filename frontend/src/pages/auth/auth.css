@@ -15,9 +15,9 @@
   padding: 32px 24px;
   font-family: "Inter", "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: var(--fg-ink);
-  /* Ảnh nền: frontend/src/assets/images/bg.png (neo góc dưới trái để luôn thấy máy đo đường huyết) */
+  /* Ảnh nền y tế dùng chung cho đăng nhập và đăng ký. */
   background:
-    url("../../assets/images/bg.png") left bottom / cover no-repeat,
+    url("../../assets/images/auth-bg.png") center center / cover no-repeat,
     #cfe6fa;
   background-attachment: fixed;
 }

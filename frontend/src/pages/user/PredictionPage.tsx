@@ -7,6 +7,7 @@ import predictionBanner from "../../assets/images/prediction-banner.png";
 import { ApiError } from "../../services/api";
 import { mlService } from "../../services/mlService";
 import type { Gender, Patient, PatientInfo, PredictionMode, PredictionResult } from "../../types";
+import { formatDateOfBirth, localISODate, parseDateOfBirth } from "../../utils/validators";
 import "../../dashboard.css";
 
 const REQUIRED = ["age", "sex", "bmi"];
@@ -46,27 +47,22 @@ function bmiCategory(bmi: number | null): { tone: BmiTone; label: string } {
 }
 
 function ageFromBirthdate(value: string): number | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const [year, month, day] = value.split("-").map(Number);
-  const birthdate = new Date(year, month - 1, day);
+  const isoDate = parseDateOfBirth(value);
+  if (!isoDate) return null;
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const birthdate = new Date(0);
+  birthdate.setFullYear(year, month - 1, day);
   if (
     birthdate.getFullYear() !== year
     || birthdate.getMonth() !== month - 1
     || birthdate.getDate() !== day
-    || birthdate > new Date()
+    || isoDate > localISODate()
   ) return null;
 
   const today = new Date();
   let age = today.getFullYear() - year;
   if (today.getMonth() < month - 1 || (today.getMonth() === month - 1 && today.getDate() < day)) age -= 1;
   return age;
-}
-
-function localDateValue(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 function Field({ id, label, children }: { id?: string; label: string; children: ReactNode }) {
@@ -111,7 +107,11 @@ function Segmented({ label, options, value, onChange, disabled = false }: {
         const on = String(value) === String(option.value);
         return (
           <button key={String(option.value)} type="button" aria-pressed={on} disabled={disabled}
-            className={on ? (option.value === "" ? "is-on is-skip" : "is-on") : undefined}
+            className={on
+              ? option.value === ""
+                ? option.label === "Bỏ qua" ? "is-on is-skip" : "is-on is-placeholder"
+                : "is-on"
+              : undefined}
             onClick={() => onChange(String(option.value))}>
             {option.label}
           </button>
@@ -236,7 +236,8 @@ export default function HealthPredict({
   const missingOptional = optionalFields.filter(isBlank).length;
   const maxMissing = MAX_MISSING_BY_MODE[mode];
   const tooManyMissing = missingOptional > maxMissing;
-  const missingMessage = `Đang bỏ trống ${missingOptional} câu; schema mô hình cho phép tối đa ${maxMissing} câu ở chế độ này.`;
+  const missingToAnswer = Math.max(0, missingOptional - maxMissing);
+  const missingMessage = `Bạn đang bỏ trống ${missingOptional} câu. Ở chế độ này, bạn chỉ được bỏ trống tối đa ${maxMissing} câu. Vui lòng trả lời thêm ít nhất ${missingToAnswer} câu để tiếp tục.`;
 
   function setFeature(name: string, value: string) {
     const field = FEATURE_FIELDS[mode].find((item) => item.name === name);
@@ -281,7 +282,7 @@ export default function HealthPredict({
       ? patientGender === "male" ? "Male" : patientGender === "female" ? "Female" : ""
       : features.sex;
     if (modelSex === "" || modelSex === undefined) {
-      setError("Vui lòng chọn giới tính.");
+      setError("Vui lòng chọn giới tính Nam hoặc Nữ trước khi tiếp tục.");
       return;
     }
     if (bmi === null) {
@@ -292,6 +293,7 @@ export default function HealthPredict({
       setError(missingMessage);
       return;
     }
+    const patientBirthdateIso = parseDateOfBirth(patientBirthdate);
     const patient: PatientInfo | { patientId: string } | undefined = target !== "patient"
       ? undefined
       : selectedPatientId
@@ -299,7 +301,7 @@ export default function HealthPredict({
         : {
           fullName: patientName.trim(),
           ...(patientCode.trim() ? { patientCode: patientCode.trim() } : {}),
-          ...(patientBirthdate ? { birthdate: patientBirthdate } : {}),
+          ...(patientBirthdateIso ? { birthdate: patientBirthdateIso } : {}),
           ...(patientGender ? { gender: patientGender } : {}),
           ...(patientPhone.trim() ? { phone: patientPhone.trim() } : {}),
         };
@@ -395,7 +397,7 @@ export default function HealthPredict({
             </section>
             <div className="dg-predict-disclaimer" role="note">
               <AlertTriangle aria-hidden="true" />
-              <span>Mô hình được huấn luyện trên dữ liệu BRFSS tự khai báo, chưa được kiểm định lâm sàng tại Việt Nam. Kết quả chỉ mang tính tham khảo, không phải chẩn đoán.</span>
+              <span><strong>Lưu ý về giới hạn mô hình:</strong> Mô hình được huấn luyện trên dữ liệu BRFSS tự khai báo, chưa được kiểm định lâm sàng tại Việt Nam. Kết quả chỉ mang tính tham khảo, không phải chẩn đoán thay thế cho bác sĩ.</span>
             </div>
             {error && <div className="dg-notice dg-notice--error" role="alert"><CircleAlert aria-hidden="true" /><span>{error}</span></div>}
             {target === "patient" && patientLoadError && <div className="dg-notice dg-notice--error" role="alert"><CircleAlert aria-hidden="true" /><span>{patientLoadError}</span></div>}
@@ -413,7 +415,7 @@ export default function HealthPredict({
                         selectedPatientId: patientId,
                         patientName: patient?.fullName ?? "",
                         patientCode: patient?.patientCode ?? "",
-                        patientBirthdate: patient?.birthdate?.slice(0, 10) ?? "",
+                        patientBirthdate: formatDateOfBirth(patient?.birthdate),
                         patientGender: patient?.gender ?? "",
                         patientPhone: patient?.phone ?? "",
                       });
@@ -431,12 +433,13 @@ export default function HealthPredict({
                         placeholder="Ví dụ: BN-001" maxLength={40} />
                     </Field>
                     <Field id="patient-birthdate" label="Ngày sinh">
-                      <input id="patient-birthdate" className="dg-input" type="date" max={localDateValue(new Date())}
-                        value={patientBirthdate} onChange={(event) => updateDraft({ patientBirthdate: event.target.value })} required />
+                      <input id="patient-birthdate" className="dg-input" type="text" inputMode="numeric" maxLength={10}
+                        placeholder="dd/mm/yyyy" value={patientBirthdate}
+                        onChange={(event) => updateDraft({ patientBirthdate: event.target.value })} required />
                     </Field>
                     <Field label="Giới tính">
-                      <Segmented label="Giới tính bệnh nhân" value={patientGender} onChange={(value) => updateDraft({ patientGender: value as Gender | "" })}
-                        options={[{ value: "", label: "Chọn giới tính" }, { value: "female", label: "Nữ" }, { value: "male", label: "Nam" }]} />
+                      <Segmented label="Giới tính bệnh nhân" value={patientGender} onChange={(value) => updateDraft({ patientGender: value as Gender })}
+                        options={[{ value: "male", label: "Nam" }, { value: "female", label: "Nữ" }]} />
                     </Field>
                     <Field id="patient-phone" label="Số điện thoại">
                       <input id="patient-phone" className="dg-input" value={patientPhone} onChange={(event) => updateDraft({ patientPhone: event.target.value })} />
@@ -460,8 +463,9 @@ export default function HealthPredict({
                   <div className="dg-fields dg-fields--4">
                     {target === "self" && (
                       <Field id="self-birthdate" label="Ngày sinh">
-                        <input id="self-birthdate" className="dg-input" type="date" max={localDateValue(new Date())}
-                          value={patientBirthdate} onChange={(event) => updateDraft({ patientBirthdate: event.target.value })} required />
+                        <input id="self-birthdate" className="dg-input" type="text" inputMode="numeric" maxLength={10}
+                        placeholder="dd/mm/yyyy" value={patientBirthdate}
+                        onChange={(event) => updateDraft({ patientBirthdate: event.target.value })} required />
                       </Field>
                     )}
                     <Field id="feature-age" label="Tuổi (tự động)">
@@ -506,9 +510,9 @@ export default function HealthPredict({
           ))}
 
           <div className="dg-actions">
-            <p className={tooManyMissing ? "is-warn" : undefined}>
-                {tooManyMissing ? missingMessage : `Đã đủ thông tin để dự đoán. Có thể bỏ qua tối đa ${maxMissing} câu theo schema.`}
-            </p>
+            {tooManyMissing && <div className="dg-notice dg-notice--warning" role="alert">
+              <AlertTriangle aria-hidden="true" /><span>{missingMessage}</span>
+            </div>}
             <div className="dg-actions-buttons">
               <button type="button" className="dg-btn-secondary" onClick={reset} disabled={busy}>Đặt lại</button>
               <button type="submit" className="dg-submit" disabled={busy || tooManyMissing}>
