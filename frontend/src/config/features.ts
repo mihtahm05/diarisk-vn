@@ -82,7 +82,7 @@ export type FeatureField = {
 };
 
 export const FEATURE_GROUPS: { id: FeatureGroup; title: string; hint: string; clinicalOnly?: boolean }[] = [
-  { id: "basic", title: "Thông tin cơ bản", hint: "Bắt buộc nhập tuổi, giới tính, chiều cao và cân nặng. BMI được tính tự động." },
+  { id: "basic", title: "Thông tin cơ bản", hint: "Nhập ngày sinh, giới tính, chiều cao và cân nặng. Tuổi và BMI được tính tự động." },
   { id: "lifestyle", title: "Lối sống và thói quen", hint: "Thói quen gần đây của bạn. Câu nào chưa rõ thì chọn Bỏ qua." },
   { id: "general", title: "Tình trạng sức khỏe chung", hint: "Cảm nhận về sức khỏe của bạn trong 30 ngày qua." },
   { id: "social", title: "Học vấn, thu nhập và tiếp cận y tế", hint: "Điều kiện sống và khả năng đi khám của bạn." },
@@ -95,7 +95,7 @@ const yesNo: FeatureOption[] = [
 ];
 
 const commonFields: FeatureField[] = [
-  // Nhóm "basic": age, sex nhập trực tiếp; bmi do form tự tính từ chiều cao và cân nặng.
+  // Tuổi và giới tính là feature của model; form lấy tuổi từ ngày sinh.
   { name: "age", kind: "number", group: "basic", min: 18, max: 120, step: 1 },
   {
     name: "sex", kind: "select", group: "basic",
@@ -191,3 +191,8 @@ export const FEATURE_FIELDS: Record<PredictionMode, FeatureField[]> = {
 export function allowedFeatureNames(mode: PredictionMode): string[] {
   return FEATURE_FIELDS[mode].map((field) => field.name);
 }
+// Giới hạn số câu hỏi được phép bỏ trống theo chế độ dự đoán.
+export const MAX_MISSING_BY_MODE: Record<PredictionMode, number> = {
+  nonclinical: 3,
+  clinical: 2,
+};

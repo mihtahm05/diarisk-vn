@@ -19,7 +19,7 @@ import {
   updateTemplate,
   downloadActiveTemplate,
 } from '../controllers/batch.controller';
-import { accounts, updateAccount, logs, exportLogs } from '../controllers/admin.controller';
+import { accounts, updateAccount, deleteAccount, logs, exportLogs } from '../controllers/admin.controller';
 import { exportReport } from '../controllers/report.controller';
 import { auth, roles } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
@@ -53,6 +53,7 @@ router.post('/reports/export', auth, roles('doctor'), asyncHandler(exportReport)
 
 router.get('/admin/accounts', auth, roles('admin'), asyncHandler(accounts));
 router.patch('/admin/accounts/:id', auth, roles('admin'), asyncHandler(updateAccount));
+router.delete('/admin/accounts/:id', auth, roles('admin'), asyncHandler(deleteAccount));
 router.get('/admin/templates', auth, roles('admin'), asyncHandler(listTemplates));
 router.post('/admin/templates', auth, roles('admin'), upload.single('file'), asyncHandler(uploadTemplate));
 router.patch('/admin/templates/:id', auth, roles('admin'), asyncHandler(updateTemplate));

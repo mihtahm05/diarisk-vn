@@ -57,7 +57,7 @@ export const authService = {
     }
   },
 
-  async updateProfile(data: Partial<Pick<AuthUser, "name" | "birthdate" | "gender" | "address" | "phoneNumber">>): Promise<AuthUser> {
+  async updateProfile(data: Partial<Pick<AuthUser, "name" | "birthdate" | "gender" | "address" | "phoneNumber" | "workplace" | "staffCode">>): Promise<AuthUser> {
     await api.patch("/users/me", data);
     return this.me();
   },

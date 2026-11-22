@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Lock, LockOpen, Search } from "lucide-react";
+import { Loader2, Lock, LockOpen, Search, Trash2 } from "lucide-react";
 import Header from "../../components/Header";
 import { ConfirmDialog } from "../../components/Modal";
 import Pagination from "../../components/Pagination";
@@ -12,7 +12,7 @@ import type { AccountRow, AccountStatus, Paged, Role } from "../../types";
 
 const ROLE_LABEL: Record<Role, string> = { user: "Người dùng phổ thông", doctor: "Cán bộ y tế", admin: "Quản trị viên" };
 
-/** UC-10: tra cứu, đổi vai trò, khóa/mở khóa tài khoản. Quyền admin được backend kiểm tra. */
+/** UC-10: tra cứu, đổi vai trò, khóa/mở khóa và xóa tài khoản. Quyền admin được backend kiểm tra. */
 export default function AccountManagement() {
   const { user } = useAuth();
   const [q, setQ] = useState("");
@@ -23,7 +23,7 @@ export default function AccountManagement() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ tone: "error" | "success"; text: string } | null>(null);
   const [draft, setDraft] = useState<Record<string, Role>>({});
-  const [confirm, setConfirm] = useState<AccountRow | null>(null);
+  const [confirm, setConfirm] = useState<{ account: AccountRow; action: "lock" | "unlock" | "delete" } | null>(null);
   const [busyId, setBusyId] = useState("");
 
   const load = useCallback(async () => {
@@ -46,7 +46,7 @@ export default function AccountManagement() {
 
   async function toggleLock() {
     if (!confirm) return;
-    const a = confirm;
+    const { account: a } = confirm;
     setBusyId(a.userId); setMsg(null);
     try {
       await adminService.updateAccount(a.userId, { status: a.status === "active" ? "locked" : "active" });
@@ -54,6 +54,21 @@ export default function AccountManagement() {
       setConfirm(null); await load();
     } catch (e) { setMsg({ tone: "error", text: e instanceof ApiError ? e.message : "Không cập nhật được tài khoản." }); setConfirm(null); }
     finally { setBusyId(""); }
+  }
+
+  async function deleteAccount() {
+    if (!confirm || confirm.action !== "delete") return;
+    const { account } = confirm;
+    setBusyId(account.userId); setMsg(null);
+    try {
+      await adminService.deleteAccount(account.userId);
+      setConfirm(null);
+      setMsg({ tone: "success", text: `Đã xóa tài khoản "${account.name}".` });
+      await load();
+    } catch (e) {
+      setConfirm(null);
+      setMsg({ tone: "error", text: e instanceof ApiError ? e.message : "Không xóa được tài khoản." });
+    } finally { setBusyId(""); }
   }
 
   return (
@@ -72,7 +87,7 @@ export default function AccountManagement() {
 
         {loading ? <div className="flex justify-center py-10 text-brand-600"><Loader2 className="h-6 w-6 animate-spin" /></div>
           : !data || data.items.length === 0 ? <p className="py-10 text-center text-sm text-slate-500">Không tìm thấy tài khoản phù hợp</p>
-            : (<><div className="overflow-x-auto"><table className="w-full min-w-[760px]">
+            : (<><div className="overflow-x-auto"><table className="w-full min-w-[840px]">
               <thead className="border-b border-slate-200"><tr><th className="th">Họ tên</th><th className="th">Email / SĐT</th><th className="th">Vai trò</th><th className="th">Trạng thái</th><th className="th">Ngày tạo</th><th className="th text-right">Thao tác</th></tr></thead>
               <tbody className="divide-y divide-slate-100">{data.items.map((a) => {
                 const self = a.userId === user?.userId;
@@ -87,15 +102,25 @@ export default function AccountManagement() {
                   <td className="td text-xs">{formatDate(a.createdAt)}</td>
                   <td className="td text-right whitespace-nowrap">
                     <button className="btn-primary !px-3 !py-1 text-xs" disabled={self || cur === a.role || busyId === a.userId} onClick={() => saveRole(a)}>Lưu thay đổi</button>
-                    <button className="btn-ghost ml-1 !px-2 !py-1" disabled={self || busyId === a.userId} aria-label={a.status === "active" ? "Khóa tài khoản" : "Mở khóa tài khoản"} onClick={() => setConfirm(a)}>
+                    <button className="btn-ghost ml-1 !px-2 !py-1" disabled={self || busyId === a.userId} aria-label={a.status === "active" ? "Khóa tài khoản" : "Mở khóa tài khoản"} onClick={() => setConfirm({ account: a, action: a.status === "active" ? "lock" : "unlock" })}>
                       {a.status === "active" ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}</button>
+                    <button className="btn-ghost ml-1 !px-2 !py-1 text-red-600 hover:text-red-700" disabled={self || busyId === a.userId} aria-label={`Xóa tài khoản ${a.name}`} onClick={() => setConfirm({ account: a, action: "delete" })}>
+                      <Trash2 className="h-4 w-4" /></button>
                   </td></tr>);
               })}</tbody></table></div>
               <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} /></>)}
       </div>
-      {confirm && <ConfirmDialog title={confirm.status === "active" ? "Khóa tài khoản" : "Mở khóa tài khoản"}
-        message={confirm.status === "active" ? `Khóa tài khoản "${confirm.name}"? Phiên làm việc hiện tại sẽ bị hủy và tài khoản không thể đăng nhập.` : `Mở khóa tài khoản "${confirm.name}"?`}
-        confirmLabel={confirm.status === "active" ? "Khóa" : "Mở khóa"} busy={busyId === confirm.userId} onConfirm={toggleLock} onCancel={() => setConfirm(null)} />}
+      {confirm && <ConfirmDialog
+        title={confirm.action === "delete" ? "Xóa tài khoản" : confirm.action === "lock" ? "Khóa tài khoản" : "Mở khóa tài khoản"}
+        message={confirm.action === "delete"
+          ? `Xóa tài khoản "${confirm.account.name}" khỏi hệ thống? Thông tin đăng nhập sẽ bị vô hiệu hóa và các phiên đang hoạt động sẽ bị thu hồi. Lịch sử dự đoán và nhật ký liên quan vẫn được giữ lại.`
+          : confirm.action === "lock"
+            ? `Khóa tài khoản "${confirm.account.name}"? Phiên làm việc hiện tại sẽ bị hủy và tài khoản không thể đăng nhập.`
+            : `Mở khóa tài khoản "${confirm.account.name}"?`}
+        confirmLabel={confirm.action === "delete" ? "Xóa tài khoản" : confirm.action === "lock" ? "Khóa" : "Mở khóa"}
+        busy={busyId === confirm.account.userId}
+        onConfirm={() => void (confirm.action === "delete" ? deleteAccount() : toggleLock())}
+        onCancel={() => setConfirm(null)} />}
     </div>
   );
 }

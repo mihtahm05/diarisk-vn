@@ -5,6 +5,7 @@ import type { AccountRow, AccountStatus, ActivityLogRow, ExcelTemplate, Paged, R
  * Quyền admin được kiểm tra tại backend; frontend chỉ ẩn/hiện giao diện.
  *  GET   /admin/accounts           ?q&role&status&page&pageSize
  *  PATCH /admin/accounts/:id       { role?, status? }
+ *  DELETE /admin/accounts/:id      soft-delete account and revoke its sessions
  *  GET   /admin/templates
  *  POST  /admin/templates          multipart(file, templateName, version)
  *  PATCH /admin/templates/:id      { isActive }
@@ -23,6 +24,10 @@ export const adminService = {
 
   updateAccount(id: string, data: { role?: Role; status?: AccountStatus }): Promise<AccountRow> {
     return api.patch<AccountRow>(`/admin/accounts/${encodeURIComponent(id)}`, data);
+  },
+
+  deleteAccount(id: string): Promise<void> {
+    return api.delete<void>(`/admin/accounts/${encodeURIComponent(id)}`);
   },
 
   templates(): Promise<ExcelTemplate[]> {

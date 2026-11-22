@@ -3,7 +3,7 @@
 Tất cả tài liệu dùng `_id: ObjectId`, ngày giờ UTC dạng BSON Date và trường `deletedAt: Date|null` cho soft-delete khi phù hợp. ID tham chiếu được lưu dưới dạng ObjectId, không phải chuỗi. Các payload được mã hóa lưu trong `encryptedData`/`encryptedRows` theo định dạng AES-256-GCM (`iv`, `authTag`, `ciphertext`).
 
 - `users`: `{name,email(unique, lowercase),phoneNumber(unique sparse),passwordHash,birthdate,gender,address,avatar,role:user|doctor|admin,status:active|locked,createdAt,updatedAt,deletedAt}`.
-- `healthcare_staff`: `{userId:ObjectId,workplace,staffCode(unique),createdAt}`; `userId` tham chiếu `users._id`.
+- `healthcare_staff`: `{userId:ObjectId,workplace,staffCode(unique),createdAt,updatedAt?}`; `userId` tham chiếu `users._id`. Cán bộ y tế có thể cập nhật mã cán bộ và đơn vị công tác trong hồ sơ cá nhân.
 - `user_sessions`: `{userId:ObjectId,tokenHash,createdAt,expiresAt,revokedAt}`; TTL index trên `expiresAt`. Khi triển khai thật, lưu hash token/refresh token thực tế, không lưu bearer token thô.
 - `patients`: `{createdById:ObjectId,patientCode,encryptedData,createdAt,updatedAt,deletedAt}`. `encryptedData` chứa họ tên, ngày sinh, giới tính, số điện thoại và địa chỉ; phạm vi truy cập giới hạn theo `createdById`.
 - `predictions`: `{ownerId:ObjectId,patientId:ObjectId|null,batchId:ObjectId|null,mode,riskLevel,probability,encryptedData,modelVersion,createdAt,deletedAt}`. `encryptedData` chứa đầu vào, các yếu tố SHAP, tư vấn và cảnh báo model.

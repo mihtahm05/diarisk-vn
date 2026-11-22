@@ -111,6 +111,72 @@ export async function updateAccount(req: Request, res: Response): Promise<void> 
   });
 }
 
+export async function deleteAccount(req: Request, res: Response): Promise<void> {
+  const id = parseObjectId(req.params.id);
+  if (!id) {
+    res.status(400).json({ message: 'ID tài khoản không hợp lệ.' });
+    return;
+  }
+  if (id.equals(req.auth!.userId)) {
+    res.status(400).json({ message: 'Không thể xóa tài khoản đang đăng nhập.' });
+    return;
+  }
+
+  const db = getDb();
+  const existing = await db.collection('users').findOne({ _id: id, deletedAt: null });
+  if (!existing) {
+    res.status(404).json({ message: 'Không tìm thấy tài khoản.' });
+    return;
+  }
+
+  if (normalizeRole(existing.role) === 'admin' && existing.status === 'active') {
+    const activeAdminCount = await db.collection('users').countDocuments({
+      role: 'admin',
+      status: 'active',
+      deletedAt: null,
+    });
+    if (activeAdminCount <= 1) {
+      res.status(409).json({ message: 'Không thể xóa quản trị viên đang hoạt động cuối cùng.' });
+      return;
+    }
+  }
+
+  const now = new Date();
+  const result = await db.collection('users').updateOne(
+    { _id: id, deletedAt: null },
+    {
+      $set: {
+        name: 'Tài khoản đã xóa',
+        email: `deleted-${id.toHexString()}@deleted.invalid`,
+        deletedAt: now,
+        status: 'locked',
+        updatedAt: now,
+      },
+      $unset: {
+        phoneNumber: '',
+        passwordHash: '',
+        birthdate: '',
+        gender: '',
+        address: '',
+        avatar: '',
+      },
+    },
+  );
+  if (!result.matchedCount) {
+    res.status(404).json({ message: 'Tài khoản không còn tồn tại.' });
+    return;
+  }
+
+  await db.collection('user_sessions').updateMany(
+    { userId: id, revokedAt: null },
+    { $set: { revokedAt: now } },
+  );
+  await db.collection('healthcare_staff').deleteOne({ userId: id });
+  await recordActivity(req, 'DELETE_ACCOUNT', 'users', String(id), 'Xóa tài khoản khỏi hệ thống');
+
+  res.json({ message: 'Đã xóa tài khoản thành công.' });
+}
+
 function logFilter(query: Record<string, unknown>): Record<string, unknown> {
   const filter: Record<string, unknown> = {};
   if (typeof query.actionType === 'string' && query.actionType.trim()) {

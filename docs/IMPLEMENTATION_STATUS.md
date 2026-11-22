@@ -1,5 +1,31 @@
 # DiaRisk VN implementation status
 
+## Admin account deletion
+
+- Added per-account deletion to the admin account-management table with a confirmation dialog.
+- `DELETE /api/admin/accounts/:id` soft-deletes and anonymizes the account, removes its healthcare-staff profile, revokes active sessions, and records an activity-log entry. Unique contact fields are released for future registration; existing prediction history and audit logs are retained.
+- Backend authorization requires the admin role; self-deletion and deletion of the last active administrator are rejected.
+- Validation: backend TypeScript build and frontend TypeScript check passed. The Vite production build could not run because the Windows Rollup optional package is missing from the installed dependencies.
+
+## Healthcare staff profile editing
+
+- The personal profile form now displays and allows editing the healthcare staff code and workplace.
+- The profile API validates staff code updates, rejects codes already assigned to another staff member, and repairs a missing staff profile when both fields are supplied.
+- Validation: backend TypeScript build, frontend TypeScript check, and `git diff --check` passed.
+
+## Password field placeholders
+
+- Added `********` as a visual placeholder for the current, new, and confirmation password fields. Inputs remain empty by default.
+- Validation: frontend TypeScript check and `git diff --check` passed.
+
+## Prediction form demographics and illustration
+
+- Replaced manual age entry with age derived from date of birth and sent that integer to the existing model feature `age`.
+- Removed the duplicate patient gender input; the one selected/saved gender supplies the model's `sex` feature. Existing patient selection also loads saved birthdate and gender.
+- Patient code remains empty by default and shows a muted example placeholder.
+- Added the supplied medical consultation image as a responsive banner and moved the model-use disclaimer below it in blue text.
+- Validation: frontend `tsc --noEmit` and `git diff --check` passed. Production build remains blocked by the missing `@rollup/rollup-win32-x64-msvc` optional dependency.
+
 ## Current phase
 
 **Phase 2 — Authentication screens (login and registration).** Work is limited to authentication UI, its existing API integration and registration validation/error handling. No dashboard or prediction workflow was changed in this phase.

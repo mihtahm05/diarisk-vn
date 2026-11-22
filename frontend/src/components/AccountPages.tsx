@@ -73,7 +73,7 @@ function PasswordInput({ id, value, onChange, autoComplete, minLength, invalid }
   const [show, setShow] = useState(false);
   return (
     <div className="dg-pw">
-      <input id={id} className="dg-input" type={show ? "text" : "password"} autoComplete={autoComplete} value={value}
+      <input id={id} className="dg-input" type={show ? "text" : "password"} autoComplete={autoComplete} placeholder="********" value={value}
         onChange={(event) => onChange(event.target.value)} minLength={minLength} required
         aria-invalid={invalid} aria-describedby={invalid ? `${id}-error` : undefined} />
       <button type="button" className="dg-pw-toggle" onClick={() => setShow((previous) => !previous)}
@@ -91,6 +91,7 @@ export function ProfilePage() {
   const [birthdate, setBirthdate] = useState(user?.birthdate || "");
   const [gender, setGender] = useState(user?.gender || "");
   const [address, setAddress] = useState(user?.address || "");
+  const [staffCode, setStaffCode] = useState(user?.staffCode || "");
   const [workplace, setWorkplace] = useState(user?.workplace || "");
   const [message, setMessage] = useState<Message | null>(null);
   const [busy, setBusy] = useState(false);
@@ -102,6 +103,7 @@ export function ProfilePage() {
     setBirthdate(user?.birthdate || "");
     setGender(user?.gender || "");
     setAddress(user?.address || "");
+    setStaffCode(user?.staffCode || "");
     setWorkplace(user?.workplace || "");
   }, [user]);
 
@@ -110,6 +112,7 @@ export function ProfilePage() {
     || birthdate !== (user?.birthdate || "")
     || gender !== (user?.gender || "")
     || address !== (user?.address || "")
+    || (isDoctor && staffCode !== (user?.staffCode || ""))
     || (isDoctor && workplace !== (user?.workplace || ""));
 
   async function submit(event: FormEvent) {
@@ -119,7 +122,7 @@ export function ProfilePage() {
     try {
       await authService.updateProfile({
         name, phoneNumber, birthdate, gender: gender === "male" || gender === "female" ? gender : undefined, address,
-        ...(isDoctor ? { workplace: workplace.trim() } : {}),
+        ...(isDoctor ? { staffCode: staffCode.trim(), workplace: workplace.trim() } : {}),
       });
       await refreshUser();
       setMessage({ tone: "success", text: "Đã cập nhật thông tin tài khoản." });
@@ -178,8 +181,9 @@ export function ProfilePage() {
             </Row>
             {isDoctor && (
               <>
-                <Row label="Mã cán bộ" hint="Mã số cán bộ / nhân viên y tế, không thể thay đổi" htmlFor="profile-staff-code">
-                  <input id="profile-staff-code" className="dg-input" value={user?.staffCode || ""} readOnly />
+                <Row label="Mã cán bộ / nhân viên y tế" hint="Mã số do cơ sở y tế cấp" htmlFor="profile-staff-code">
+                  <input id="profile-staff-code" className="dg-input" value={staffCode} onChange={(event) => setStaffCode(event.target.value)}
+                    required minLength={2} maxLength={80} />
                 </Row>
                 <Row label="Đơn vị công tác" hint="Bệnh viện hoặc trạm y tế" htmlFor="profile-workplace">
                   <input id="profile-workplace" className="dg-input" value={workplace} onChange={(event) => setWorkplace(event.target.value)} required maxLength={200} />

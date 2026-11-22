@@ -66,6 +66,8 @@ export interface PredictionResult {
   mode: PredictionMode;
   riskLevel: RiskLevel; // do backend phân loại (classifyRisk)
   probability: number; // 0..1
+  threshold?: number;
+  classification?: "positive" | "negative";
   shap: ShapContribution[];
   advice?: string[]; // lời khuyên do backend cung cấp
   warning?: string;
