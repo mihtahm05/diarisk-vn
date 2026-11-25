@@ -1,4 +1,4 @@
-import { AlertTriangle, Bot, RotateCcw } from "lucide-react";
+import { AlertTriangle, Bot, Download, RotateCcw } from "lucide-react";
 import { FEATURE_LABELS } from "../config/features";
 import type { PredictionMode, PredictionResult } from "../types";
 import { RiskBadge } from "./Sidebar";
@@ -10,9 +10,9 @@ const riskLabels = {
 } as const;
 
 const riskColors = {
-  low: "#36b978",
-  medium: "#f6b83f",
-  high: "#ed6672",
+  low: "#059669",
+  medium: "#d97706",
+  high: "#dc2626",
 } as const;
 
 export function PredictionLoadingView({ mode }: { mode: PredictionMode }) {
@@ -48,9 +48,12 @@ export function PredictionLoadingView({ mode }: { mode: PredictionMode }) {
   );
 }
 
-export function PredictionResultView({ result, onReset }: {
+export function PredictionResultView({ result, onReset, onDownload, downloadBusy, downloadError }: {
   result: PredictionResult;
   onReset: () => void;
+  onDownload: () => void;
+  downloadBusy: boolean;
+  downloadError?: string;
 }) {
   const probability = Math.min(100, Math.max(0, result.probability * 100));
   const factors = [...result.shap]
@@ -73,10 +76,17 @@ export function PredictionResultView({ result, onReset }: {
             <h2 id="prediction-result-title">Kết quả phân tích nguy cơ đái tháo đường</h2>
             {result.patientName && <p className="dg-result-patient">Hồ sơ: {result.patientName}</p>}
           </div>
-          <button type="button" className="dg-btn-secondary dg-result-reset" onClick={onReset}>
-            <RotateCcw aria-hidden="true" /> Dự đoán lại
-          </button>
+          <div className="dg-result-actions">
+            <button type="button" className="dg-btn-secondary" onClick={onDownload} disabled={downloadBusy}>
+              {downloadBusy ? <span className="dg-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}
+              Tải PDF
+            </button>
+            <button type="button" className="dg-btn-secondary dg-result-reset" onClick={onReset}>
+              <RotateCcw aria-hidden="true" /> Dự đoán lại
+            </button>
+          </div>
         </div>
+        {downloadError && <div className="dg-notice dg-notice--error" role="alert">{downloadError}</div>}
 
         <div className="dg-notice dg-state-notice" role="note">
           <AlertTriangle aria-hidden="true" />

@@ -1,7 +1,13 @@
-import { History, Stethoscope, UserRound } from "lucide-react";
+import { History, LayoutDashboard, Stethoscope, UserRound } from "lucide-react";
 import DashboardLayout, { type NavSection } from "../../components/DashboardLayout";
 
 export const USER_NAV: NavSection[] = [
+  {
+    title: "Tổng quan",
+    items: [
+      { to: "/user", label: "Dashboard cá nhân", icon: LayoutDashboard, },
+    ],
+  },
   {
     title: "Hồ sơ cá nhân",
     items: [

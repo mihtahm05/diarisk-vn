@@ -1,11 +1,12 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { CheckCircle2, CircleAlert, Eye, EyeOff, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Camera, CheckCircle2, CircleAlert, Eye, EyeOff, Loader2, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Header from "./Header";
 import { useAuth } from "../context/AuthContext";
 import { ApiError } from "../services/api";
 import { authService } from "../services/authService";
-import { formatDate, formatDateOfBirth, isStrongPassword, localISODate, parseDateOfBirth, PASSWORD_REQUIREMENT_MESSAGE } from "../utils/validators";
+import { formatDate, formatDateOfBirth, isStrongPassword, localISODate, normalizePhoneNumber, parseDateOfBirth, PASSWORD_REQUIREMENT_MESSAGE } from "../utils/validators";
+import UserAvatar from "./UserAvatar";
 import "../dashboard.css";
 
 /** Trang lịch sử dự đoán cá nhân nằm ở HistoryPages.tsx; xuất lại đây để App.tsx không phải sửa import. */
@@ -18,14 +19,6 @@ const ROLE_LABELS: Record<string, string> = {
   doctor: "Cán bộ y tế",
   user: "Người dùng phổ thông",
 };
-
-function initials(name?: string): string {
-  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  const first = parts[0][0] ?? "";
-  const last = parts.length > 1 ? parts[parts.length - 1][0] ?? "" : "";
-  return (first + last).toUpperCase();
-}
 
 /** Khối thông báo lỗi / thành công, cùng kiểu với trang dự đoán. */
 function MessageBox({ message }: { message: Message | null }) {
@@ -86,6 +79,7 @@ function PasswordInput({ id, value, onChange, autoComplete, minLength, invalid }
 
 export function ProfilePage() {
   const { user, refreshUser } = useAuth();
+  const avatarInput = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(user?.name || "");
   const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber || "");
   const [birthdate, setBirthdate] = useState(formatDateOfBirth(user?.birthdate));
@@ -95,6 +89,10 @@ export function ProfilePage() {
   const [workplace, setWorkplace] = useState(user?.workplace || "");
   const [message, setMessage] = useState<Message | null>(null);
   const [busy, setBusy] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState("");
+  const [avatarZoom, setAvatarZoom] = useState(1);
+  const [avatarBusy, setAvatarBusy] = useState(false);
   const isDoctor = user?.role === "doctor";
 
   useEffect(() => {
@@ -107,6 +105,92 @@ export function ProfilePage() {
     setWorkplace(user?.workplace || "");
   }, [user]);
 
+  useEffect(() => {
+    return () => {
+      if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+    };
+  }, [avatarPreview]);
+
+  function chooseAvatar(file?: File) {
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setMessage({ tone: "error", text: "Chỉ hỗ trợ ảnh JPG, JPEG, PNG hoặc WEBP." });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setMessage({ tone: "error", text: "Ảnh đại diện không được vượt quá 5 MB." });
+      return;
+    }
+    setAvatarFile(file);
+    setAvatarPreview(URL.createObjectURL(file));
+    setAvatarZoom(1);
+    setMessage(null);
+  }
+
+  async function croppedAvatar(): Promise<File> {
+    if (!avatarFile || !avatarPreview) throw new Error("Vui lòng chọn ảnh đại diện.");
+    const image = new Image();
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("Không thể đọc ảnh đã chọn."));
+      image.src = avatarPreview;
+    });
+    const side = Math.min(image.naturalWidth, image.naturalHeight) / avatarZoom;
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 512;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Trình duyệt không hỗ trợ chỉnh sửa ảnh.");
+    context.drawImage(
+      image,
+      (image.naturalWidth - side) / 2,
+      (image.naturalHeight - side) / 2,
+      side,
+      side,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((value) => value ? resolve(value) : reject(new Error("Không thể xử lý ảnh đại diện.")), "image/jpeg", 0.9);
+    });
+    return new File([blob], "avatar.jpg", { type: "image/jpeg" });
+  }
+
+  async function saveAvatar() {
+    if (!avatarFile || avatarBusy) return;
+    setAvatarBusy(true);
+    setMessage(null);
+    try {
+      await authService.uploadAvatar(await croppedAvatar());
+      await refreshUser();
+      setAvatarFile(null);
+      setAvatarPreview("");
+      if (avatarInput.current) avatarInput.current.value = "";
+      setMessage({ tone: "success", text: "Ảnh đại diện đã được cập nhật." });
+    } catch (cause) {
+      setMessage({ tone: "error", text: cause instanceof ApiError ? cause.message : cause instanceof Error ? cause.message : "Không thể cập nhật ảnh đại diện." });
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  async function removeAvatar() {
+    if (avatarBusy || !user?.avatar) return;
+    setAvatarBusy(true);
+    setMessage(null);
+    try {
+      await authService.deleteAvatar();
+      await refreshUser();
+      setMessage({ tone: "success", text: "Đã xóa ảnh đại diện." });
+    } catch (cause) {
+      setMessage({ tone: "error", text: cause instanceof ApiError ? cause.message : "Không thể xóa ảnh đại diện." });
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
   const dirty = name !== (user?.name || "")
     || phoneNumber !== (user?.phoneNumber || "")
     || birthdate !== formatDateOfBirth(user?.birthdate)
@@ -118,6 +202,11 @@ export function ProfilePage() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     const birthdateIso = birthdate ? parseDateOfBirth(birthdate) : "";
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    if (normalizedPhone === null) {
+      setMessage({ tone: "error", text: "Nhập số điện thoại hợp lệ (8–15 chữ số)." });
+      return;
+    }
     if (birthdate && !birthdateIso) {
       setMessage({ tone: "error", text: "Ngày sinh không hợp lệ. Vui lòng nhập theo định dạng dd/mm/yyyy." });
       return;
@@ -134,7 +223,7 @@ export function ProfilePage() {
     setMessage(null);
     try {
       await authService.updateProfile({
-        name, phoneNumber, birthdate: birthdateIso || "", gender: gender === "male" || gender === "female" ? gender : undefined, address,
+        name, phoneNumber: normalizedPhone, birthdate: birthdateIso || "", gender: gender === "male" || gender === "female" ? gender : undefined, address,
         ...(isDoctor ? { staffCode: staffCode.trim(), workplace: workplace.trim() } : {}),
       });
       await refreshUser();
@@ -155,12 +244,45 @@ export function ProfilePage() {
         {/* Thanh thông tin tài khoản nằm ngang ở phía trên */}
         <div className="dg-profile-banner">
           <div className="dg-profile-banner-left">
-            {user?.avatar
-              ? <img className="dg-avatar dg-avatar--lg" src={user.avatar} alt="" />
-              : <span className="dg-avatar dg-avatar--lg" aria-hidden="true">{initials(user?.name)}</span>}
-            <div>
+            <div className="dg-profile-avatar">
+              {avatarPreview
+                ? <img className="dg-avatar dg-avatar--lg" src={avatarPreview} alt="Xem trước ảnh đại diện" />
+                : <UserAvatar name={user?.name} src={user?.avatar} className="dg-avatar dg-avatar--lg" />}
+              <input ref={avatarInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp"
+                onChange={(event) => {
+                  chooseAvatar(event.target.files?.[0]);
+                  event.target.value = "";
+                }} />
+              <button type="button" className="dg-avatar-upload" onClick={() => avatarInput.current?.click()} disabled={avatarBusy}
+                aria-label={avatarFile ? "Chọn ảnh đại diện khác" : "Tải ảnh đại diện"} title="Tải ảnh đại diện">
+                {avatarBusy ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Camera aria-hidden="true" />}
+              </button>
+            </div>
+            <div className="dg-profile-identity">
               <p className="dg-aside-name">{user?.name}</p>
               <p className="dg-aside-sub">{user?.email}</p>
+              {avatarPreview && (
+                <div className="dg-avatar-pending">
+                  <label className="dg-avatar-zoom">
+                    Thu phóng ảnh
+                    <input type="range" min="1" max="3" step="0.05" value={avatarZoom}
+                      onChange={(event) => setAvatarZoom(Number(event.target.value))} />
+                  </label>
+                  <div className="dg-avatar-actions">
+                    <button type="button" className="btn-primary" onClick={() => void saveAvatar()} disabled={avatarBusy}>
+                      {avatarBusy && <Loader2 className="h-4 w-4 animate-spin" />} Lưu ảnh
+                    </button>
+                    <button type="button" className="btn-ghost" onClick={() => { setAvatarFile(null); setAvatarPreview(""); }} disabled={avatarBusy}>
+                      Hủy
+                    </button>
+                  </div>
+                </div>
+              )}
+              {!avatarPreview && user?.avatar && (
+                <button type="button" className="dg-avatar-remove" onClick={() => void removeAvatar()} disabled={avatarBusy}>
+                  {avatarBusy ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Trash2 aria-hidden="true" />} Xóa ảnh
+                </button>
+              )}
             </div>
           </div>
           <div className="dg-profile-banner-right">

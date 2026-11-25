@@ -30,6 +30,11 @@
   align-items: center;
   gap: 64px;
 }
+.fg-shell--single {
+  max-width: 930px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 480px);
+  gap: 42px;
+}
 
 /* ---------- Bên trái: nằm ở nửa trên để không đè lên hình minh họa của ảnh nền ---------- */
 .fg-brand {
@@ -203,6 +208,28 @@
 .fg-switch a { color: var(--fg-blue); font-weight: 600; text-decoration: none; }
 .fg-switch a:hover { text-decoration: underline; }
 
+.fg-home-link {
+  position: fixed;
+  z-index: 2;
+  left: 20px;
+  bottom: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 13px;
+  border: 1px solid rgba(95, 155, 232, 0.55);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--fg-ink);
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 4px 14px rgba(40, 90, 170, 0.12);
+}
+.fg-home-link svg { width: 16px; height: 16px; color: var(--fg-blue); }
+.fg-home-link:hover { border-color: var(--fg-blue); color: var(--fg-blue); }
+.fg-home-link:focus-visible { outline: 2px solid var(--fg-blue); outline-offset: 3px; }
+
 .fg-alert {
   display: flex;
   align-items: flex-start;
@@ -222,13 +249,15 @@
   .fg-brand { align-self: center; margin-top: 0; }
   .fg-art { display: none; }
   .fg-logo { width: 84px; }
+  .fg-home-link { position: static; justify-self: start; margin: 18px 0 0 max(20px, calc((100vw - 520px) / 2)); }
 }
 @media (max-width: 520px) {
   .fg-card { padding: 28px 20px; border-radius: 20px; }
+  .fg-home-link { margin-left: 20px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .fg-spin { animation: none; }
-  .fg-submit, .fg-field, .fg-eye { transition: none; }
+  .fg-submit, .fg-field, .fg-eye, .fg-home-link { transition: none; }
 }
 
 /* =====================  Phần riêng của trang đăng ký (tiền tố rg-)  ===================== */

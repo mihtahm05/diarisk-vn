@@ -17,11 +17,18 @@ export default function ReportExport() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [batches, setBatches] = useState<BatchSummary[]>([]);
   const [msg, setMsg] = useState<{ tone: "error" | "success"; text: string } | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    mlService.patients({ pageSize: 100 }).then((r) => setPatients(r.items)).catch(() => undefined);
-    mlService.batches().then(setBatches).catch(() => undefined);
+    Promise.all([mlService.patients({ pageSize: 100 }), mlService.batches({ pageSize: 100 })])
+      .then(([patientResult, batchResult]) => {
+        setPatients(patientResult.items);
+        setBatches(batchResult.items);
+      })
+      .catch((cause: unknown) => {
+        setLoadError(cause instanceof ApiError ? cause.message : "Không tải được dữ liệu để xuất báo cáo.");
+      });
   }, []);
 
   async function onSubmit(ev: FormEvent) {
@@ -50,6 +57,7 @@ export default function ReportExport() {
     <div>
       <Header title="Xuất báo cáo" subtitle="Xuất kết quả dự đoán ra tệp Excel hoặc PDF" />
       <form onSubmit={onSubmit} className="panel max-w-2xl space-y-4" noValidate>
+        {loadError && <Notice tone="error">{loadError}</Notice>}
         {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
         <div className="grid gap-4 sm:grid-cols-2">
           <SelectField id="r-scope" label="Phạm vi dữ liệu" value={scope} onChange={(e) => setScope(e.target.value as ReportScope)}>

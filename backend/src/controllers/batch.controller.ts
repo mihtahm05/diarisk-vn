@@ -5,14 +5,12 @@ import path from 'path';
 import fsSync from 'fs';
 import { randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
-import { ObjectId } from 'mongodb';
 import { env } from '../config/env';
 import { getDb } from '../config/database';
 import { recordActivity } from '../utils/activityLog';
 import { decryptJson, encryptJson } from '../utils/encryption';
 import { parseObjectId } from '../utils/objectId';
-import { createPatientRecord } from './patient.controller';
-import { runPrediction, savePrediction, validateFeatures } from './prediction.controller';
+import { runPrediction, validateFeatures } from './prediction.controller';
 
 const uploadDirectory = path.resolve(process.cwd(), env.uploadDir);
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -46,6 +44,18 @@ interface BatchRow {
   patientCode?: string;
   fullName: string;
   features: Record<string, number | string>;
+}
+
+interface BatchResultRecord {
+  rowNo: number;
+  patientCode?: string;
+  fullName: string;
+  riskLevel: string;
+  probability: number;
+  topFactors: string[];
+  predictionId: string;
+  features: Record<string, number | string>;
+  shap: Array<{ feature: string; shap: number; value?: number | string }>;
 }
 
 function cellValue(value: ExcelJS.CellValue): unknown {
@@ -172,7 +182,7 @@ export async function confirmBatch(req: Request, res: Response): Promise<void> {
     return;
   }
   const db = getDb();
-  const batch = await db.collection('prediction_batches').findOne({ _id: batchId, staffId: req.auth!.userId });
+  const batch = await db.collection('prediction_batches').findOne({ _id: batchId, staffId: req.auth!.userId, deletedAt: null });
   if (!batch) {
     res.status(404).json({ message: 'Không tìm thấy đợt dự đoán.' });
     return;
@@ -182,7 +192,7 @@ export async function confirmBatch(req: Request, res: Response): Promise<void> {
     return;
   }
   const claim = await db.collection('prediction_batches').updateOne(
-    { _id: batchId, status: 'validated' },
+    { _id: batchId, staffId: req.auth!.userId, deletedAt: null, status: 'validated' },
     { $set: { status: 'processing' } },
   );
   if (!claim.modifiedCount) {
@@ -191,51 +201,22 @@ export async function confirmBatch(req: Request, res: Response): Promise<void> {
   }
 
   const rows = decryptJson<BatchRow[]>(batch.encryptedRows);
-  const results: Array<{
-    patientCode?: string; fullName: string; riskLevel: string; probability: number;
-    topFactors: string[]; predictionId: string;
-  }> = [];
+  const results: BatchResultRecord[] = [];
   const failures: Array<{ rowNo: number; columnName: string; errorMessage: string }> = [];
   for (let offset = 0; offset < rows.length; offset += 10) {
     const chunk = rows.slice(offset, offset + 10);
     const settled = await Promise.allSettled(chunk.map(async (row) => {
       const prediction = await runPrediction('nonclinical', row.features);
-      let patientId: ObjectId;
-      let patientCode = row.patientCode;
-      if (patientCode) {
-        const existing = await db.collection('patients').findOne({
-          createdById: req.auth!.userId,
-          patientCode,
-          deletedAt: null,
-        });
-        if (existing) {
-          patientId = existing._id;
-          await db.collection('patients').updateOne(
-            { _id: patientId },
-            { $set: { encryptedData: encryptJson({ fullName: row.fullName, birthdate: null, gender: null, phone: null, address: null }), updatedAt: new Date() } },
-          );
-        } else {
-          const created = await createPatientRecord(req.auth!.userId, {
-            fullName: row.fullName, birthdate: null, gender: null, phone: null, address: null,
-          }, patientCode);
-          patientId = new ObjectId(created.patientId);
-        }
-      } else {
-        const created = await createPatientRecord(req.auth!.userId, {
-          fullName: row.fullName, birthdate: null, gender: null, phone: null, address: null,
-        });
-        patientId = new ObjectId(created.patientId);
-        patientCode = created.patientCode;
-      }
-
-      const saved = await savePrediction(req.auth!.userId, patientId, batchId, 'nonclinical', row.features, prediction);
       return {
-        patientCode,
+        rowNo: row.rowNo,
+        patientCode: row.patientCode,
         fullName: row.fullName,
         riskLevel: prediction.riskLevel,
         probability: prediction.probability,
         topFactors: prediction.shap.slice().sort((a, b) => Math.abs(b.shap) - Math.abs(a.shap)).slice(0, 3).map((item) => item.feature),
-        predictionId: String(saved._id),
+        predictionId: `${String(batchId)}:${row.rowNo}`,
+        features: row.features,
+        shap: prediction.shap,
       };
     }));
     settled.forEach((item, index) => {
@@ -258,28 +239,133 @@ export async function confirmBatch(req: Request, res: Response): Promise<void> {
       createdAt: new Date(),
     })));
   }
-  const status = failures.length ? (results.length ? 'partially_completed' : 'failed') : 'completed';
+  const totalFailures = (batch.errorRows || 0) + failures.length;
+  const status = totalFailures ? (results.length ? 'partially_completed' : 'failed') : 'completed';
   await db.collection('prediction_batches').updateOne(
     { _id: batchId },
-    { $set: { status, predictedAt: new Date(), completedRows: results.length, failedRows: failures.length }, $unset: { encryptedRows: '' } },
+    {
+      $set: {
+        status,
+        predictedAt: new Date(),
+        completedRows: results.length,
+        failedRows: totalFailures,
+        encryptedRows: encryptJson(results),
+      },
+    },
   );
   await recordActivity(req, 'CONFIRM_BATCH', 'prediction_batches', String(batchId), 'Dự đoán hàng loạt');
   res.json({ rows: results, errors: failures, status });
 }
 
 export async function listBatches(req: Request, res: Response): Promise<void> {
-  const batches = await getDb().collection('prediction_batches')
-    .find({ staffId: req.auth!.userId })
-    .sort({ createdAt: -1 })
-    .limit(100)
-    .toArray();
-  res.json(batches.map((batch) => ({
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 5));
+  const filter = { staffId: req.auth!.userId, deletedAt: null };
+  const collection = getDb().collection('prediction_batches');
+  const [total, batches] = await Promise.all([
+    collection.countDocuments(filter),
+    collection.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * pageSize)
+      .limit(pageSize)
+      .toArray(),
+  ]);
+  res.json({ items: batches.map((batch) => ({
     batchId: String(batch._id),
     fileName: batch.fileName,
     totalRows: batch.totalRows,
     validRows: batch.validRows,
+    status: batch.status,
+    completedRows: batch.completedRows || 0,
+    failedRows: batch.failedRows ?? batch.errorRows ?? 0,
     createdAt: batch.createdAt,
-  })));
+    predictedAt: batch.predictedAt || null,
+  })), total, page, pageSize });
+}
+
+export async function batchDetail(req: Request, res: Response): Promise<void> {
+  const batchId = parseObjectId(req.params.id);
+  if (!batchId) {
+    res.status(400).json({ message: 'Mã đợt dự đoán không hợp lệ.' });
+    return;
+  }
+  const db = getDb();
+  const batch = await db.collection('prediction_batches').findOne({
+    _id: batchId,
+    staffId: req.auth!.userId,
+    deletedAt: null,
+  });
+  if (!batch) {
+    res.status(404).json({ message: 'Không tìm thấy đợt dự đoán.' });
+    return;
+  }
+
+  let rows: BatchResultRecord[] = [];
+  if (batch.encryptedRows && ['completed', 'partially_completed', 'failed'].includes(batch.status)) {
+    rows = decryptJson<BatchResultRecord[]>(batch.encryptedRows);
+  } else if (['completed', 'partially_completed', 'failed'].includes(batch.status)) {
+    const predictions = await db.collection('predictions')
+      .find({ batchId, ownerId: req.auth!.userId, deletedAt: null })
+      .sort({ createdAt: 1 })
+      .toArray();
+    rows = await Promise.all(predictions.map(async (prediction, index) => {
+      const privateData = decryptJson<{
+        features: Record<string, number | string>;
+        shap: Array<{ feature: string; shap: number; value?: number | string }>;
+      }>(prediction.encryptedData);
+      const patient = prediction.patientId
+        ? await db.collection('patients').findOne({ _id: prediction.patientId, createdById: req.auth!.userId })
+        : null;
+      const person = patient ? decryptJson<{ fullName: string }>(patient.encryptedData) : null;
+      return {
+        rowNo: index + 1,
+        patientCode: patient?.patientCode,
+        fullName: person?.fullName || '',
+        riskLevel: prediction.riskLevel,
+        probability: prediction.probability,
+        topFactors: privateData.shap.slice().sort((a, b) => Math.abs(b.shap) - Math.abs(a.shap)).slice(0, 3).map((item) => item.feature),
+        predictionId: String(prediction._id),
+        features: privateData.features,
+        shap: privateData.shap,
+      };
+    }));
+  }
+
+  const errors = await db.collection('batch_row_errors')
+    .find({ batchId })
+    .sort({ rowNo: 1 })
+    .toArray();
+  res.json({
+    batchId: String(batch._id),
+    fileName: batch.fileName,
+    totalRows: batch.totalRows,
+    validRows: batch.validRows,
+    completedRows: batch.completedRows || 0,
+    failedRows: batch.failedRows ?? batch.errorRows ?? 0,
+    status: batch.status,
+    createdAt: batch.createdAt,
+    predictedAt: batch.predictedAt || null,
+    rows,
+    errors: errors.map(({ rowNo, columnName, errorMessage }) => ({ rowNo, columnName, errorMessage })),
+  });
+}
+
+export async function deleteBatch(req: Request, res: Response): Promise<void> {
+  const batchId = parseObjectId(req.params.id);
+  if (!batchId) {
+    res.status(400).json({ message: 'Mã đợt dự đoán không hợp lệ.' });
+    return;
+  }
+  const result = await getDb().collection('prediction_batches').updateOne(
+    { _id: batchId, staffId: req.auth!.userId, deletedAt: null },
+    { $set: { deletedAt: new Date() } },
+  );
+  if (!result.modifiedCount) {
+    res.status(404).json({ message: 'Không tìm thấy phiên dự đoán hoặc bạn không có quyền xóa.' });
+    return;
+  }
+  await recordActivity(req, 'DELETE_BATCH', 'prediction_batches', String(batchId), 'Ẩn phiên dự đoán hàng loạt khỏi lịch sử');
+  res.status(204).end();
 }
 
 export async function listTemplates(_req: Request, res: Response): Promise<void> {

@@ -73,7 +73,8 @@ export default function AccountManagement() {
 
   return (
     <div>
-      <Header title="Tài khoản & phân quyền" subtitle="Quản lý vai trò và trạng thái hoạt động của tài khoản" />
+      <Header title="Tài khoản & phân quyền" subtitle="Quản lý vai trò và trạng thái hoạt động của tài khoản"
+        actions={<button type="button" className="dh-primary-action" disabled title="Chức năng tạo tài khoản mới chưa có trong API hiện tại">+ Tài khoản mới</button>} />
       {msg && <div className="mb-3"><Notice tone={msg.tone}>{msg.text}</Notice></div>}
       <div className="panel">
         <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_190px_170px]">

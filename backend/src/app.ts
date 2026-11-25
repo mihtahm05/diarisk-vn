@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
+import path from 'node:path';
 import { env } from './config/env';
 import routes from './routes';
 
@@ -14,18 +15,24 @@ app.use((req, res, next) => {
 });
 app.use(cors({ origin: env.origin, credentials: false }));
 app.use(express.json({ limit: '1mb' }));
+app.use('/api/uploads/avatars', express.static(path.resolve(process.cwd(), env.uploadDir, 'avatars'), {
+  dotfiles: 'deny',
+  index: false,
+  fallthrough: true,
+  maxAge: '1h',
+}));
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'diarisk-backend' }));
 app.use('/api', routes);
 app.use((_req, res) => res.status(404).json({ message: 'Không tìm thấy API yêu cầu.' }));
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (error instanceof multer.MulterError) {
     const message = error.code === 'LIMIT_FILE_SIZE'
-      ? 'Tệp vượt quá giới hạn 10 MB.'
+      ? _req.path === '/api/users/me/avatar' ? 'Ảnh vượt quá giới hạn 5 MB.' : 'Tệp vượt quá giới hạn 10 MB.'
       : 'Không thể nhận tệp tải lên.';
     res.status(400).json({ message });
     return;
   }
-  if (error instanceof Error && error.message.startsWith('Định dạng tệp không hợp lệ')) {
+  if (error instanceof Error && (error.message.startsWith('Định dạng tệp không hợp lệ') || error.message.startsWith('Định dạng ảnh không hợp lệ'))) {
     res.status(400).json({ message: error.message });
     return;
   }

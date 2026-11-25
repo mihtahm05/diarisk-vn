@@ -22,6 +22,14 @@ export const authService = {
     return res;
   },
 
+  requestPasswordReset(email: string): Promise<{ message: string }> {
+    return api.post<{ message: string }>("/auth/forgot-password", { email: email.trim().toLowerCase() }, false);
+  },
+
+  resetPassword(p: { token: string; password: string; confirmPassword: string }): Promise<void> {
+    return api.post<void>("/auth/reset-password", p, false);
+  },
+
   /** Không tự đăng nhập; chỉ coi là thành công khi API trả 2xx. */
   async register(p: RegisterPayload): Promise<void> {
     const body: Record<string, unknown> = {
@@ -60,6 +68,16 @@ export const authService = {
   async updateProfile(data: Partial<Pick<AuthUser, "name" | "birthdate" | "gender" | "address" | "phoneNumber" | "workplace" | "staffCode">>): Promise<AuthUser> {
     await api.patch("/users/me", data);
     return this.me();
+  },
+
+  async uploadAvatar(file: File): Promise<void> {
+    const form = new FormData();
+    form.append("avatar", file);
+    await api.upload<{ avatar: string }>("/users/me/avatar", form);
+  },
+
+  async deleteAvatar(): Promise<void> {
+    await api.delete<void>("/users/me/avatar");
   },
 
   async changePassword(p: { currentPassword: string; newPassword: string; confirmPassword: string }): Promise<void> {

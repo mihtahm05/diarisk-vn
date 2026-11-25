@@ -7,3 +7,6 @@ __pycache__/
 backend/uploads/*
 !backend/uploads/.gitkeep
 ml-service/model/brfss2015_clean.csv
+
+.history/
+*.bak

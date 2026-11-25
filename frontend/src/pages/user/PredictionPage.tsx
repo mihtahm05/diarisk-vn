@@ -6,6 +6,7 @@ import { FEATURE_FIELDS, FEATURE_GROUPS, FEATURE_HINTS, FEATURE_LABELS, MAX_MISS
 import predictionBanner from "../../assets/images/prediction-banner.png";
 import { ApiError } from "../../services/api";
 import { mlService } from "../../services/mlService";
+import { useAuth } from "../../context/AuthContext";
 import type { Gender, Patient, PatientInfo, PredictionMode, PredictionResult } from "../../types";
 import { formatDateOfBirth, localISODate, parseDateOfBirth } from "../../utils/validators";
 import "../../dashboard.css";
@@ -175,6 +176,7 @@ export default function HealthPredict({
   patientDraft,
   onPatientDraftChange,
 }: HealthPredictProps) {
+  const { user } = useAuth();
   const [localDraft, setLocalDraft] = useState<PatientPredictionDraft>(emptyPatientDraft);
   const draft = patientDraft ?? localDraft;
   const features = useMemo(() => ({ ...initialFeatures(mode), ...draft.features }), [mode, draft.features]);
@@ -188,9 +190,16 @@ export default function HealthPredict({
   const selectedPatientId = draft.selectedPatientId;
   const [existingPatients, setExistingPatients] = useState<Patient[]>([]);
   const [patientLoadError, setPatientLoadError] = useState("");
+  const [patientSearch, setPatientSearch] = useState("");
+  const [patientOptionsOpen, setPatientOptionsOpen] = useState(false);
+  const [patientPrefillBusy, setPatientPrefillBusy] = useState(false);
   const [result, setResult] = useState<PredictionResult | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [downloadBusy, setDownloadBusy] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+  const [wizardStep, setWizardStep] = useState(0);
+  const [hasStartedInput, setHasStartedInput] = useState(false);
 
   function updateDraft(patch: Partial<PatientPredictionDraft>) {
     const next = { ...draft, ...patch };
@@ -200,21 +209,34 @@ export default function HealthPredict({
 
   useEffect(() => {
     if (target === "self") {
-      setLocalDraft((previous) => ({ ...previous, features: initialFeatures(mode) }));
+      setLocalDraft((previous) => ({
+        ...previous,
+        features: {
+          ...initialFeatures(mode),
+          ...(user?.gender ? { sex: user.gender === "male" ? "Male" : "Female" } : {}),
+        },
+        patientBirthdate: formatDateOfBirth(user?.birthdate),
+        patientGender: user?.gender ?? "",
+      }));
     }
     setResult(null);
-  }, [mode, target]);
+    setWizardStep(0);
+    setHasStartedInput(false);
+  }, [mode, target, user?.birthdate, user?.gender]);
 
   useEffect(() => {
     if (target !== "patient") return;
     let active = true;
-    mlService.patients({ pageSize: 100 })
-      .then((response) => { if (active) setExistingPatients(response.items); })
-      .catch((cause: unknown) => {
-        if (active) setPatientLoadError(cause instanceof ApiError ? cause.message : "Không tải được hồ sơ bệnh nhân.");
-      });
-    return () => { active = false; };
-  }, [target]);
+    const timer = window.setTimeout(() => {
+      setPatientLoadError("");
+      mlService.patients({ q: patientSearch.trim(), pageSize: 100 })
+        .then((response) => { if (active) setExistingPatients(response.items); })
+        .catch((cause: unknown) => {
+          if (active) setPatientLoadError(cause instanceof ApiError ? cause.message : "Không tải được hồ sơ bệnh nhân.");
+        });
+    }, patientSearch.trim() ? 250 : 0);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [target, patientSearch]);
 
   const bmi = useMemo(() => {
     const h = Number(height);
@@ -229,6 +251,49 @@ export default function HealthPredict({
   const ageInModelRange = age !== null && age >= 18 && age <= 120;
   const selectedPatient = existingPatients.find((patient) => patient.patientId === selectedPatientId);
 
+  async function choosePatient(patient: Patient | null) {
+    setHasStartedInput(true);
+    setPatientOptionsOpen(false);
+    if (!patient) {
+      setPatientSearch("");
+      updateDraft({
+        selectedPatientId: "",
+        patientName: "",
+        patientCode: "",
+        patientBirthdate: "",
+        patientGender: "",
+        patientPhone: "",
+        features: initialFeatures(mode),
+        height: "",
+        weight: "",
+      });
+      return;
+    }
+
+    updateDraft({
+      selectedPatientId: patient.patientId,
+      patientName: patient.fullName,
+      patientCode: patient.patientCode,
+      patientBirthdate: formatDateOfBirth(patient.birthdate),
+      patientGender: patient.gender ?? "",
+      patientPhone: patient.phone ?? "",
+    });
+    setPatientSearch(`${patient.patientCode} · ${patient.fullName}`);
+    setPatientPrefillBusy(true);
+    try {
+      const history = await mlService.patientPredictions(patient.patientId);
+      const latest = history.find((item) => item.mode === mode);
+      if (latest) {
+        const detail = await mlService.detail(latest.predictionId);
+        updateDraft({ features: { ...features, ...(detail.inputs ?? {}) } });
+      }
+    } catch (cause) {
+      setPatientLoadError(cause instanceof ApiError ? cause.message : "Không tải được dữ liệu đánh giá gần nhất.");
+    } finally {
+      setPatientPrefillBusy(false);
+    }
+  }
+
   const effective = useMemo(() => applyRules(mode, features), [mode, features]);
   const locked = useMemo(() => lockedFields(mode, features), [mode, features]);
   const isBlank = (field: FeatureField) => effective[field.name] === "" || effective[field.name] === undefined;
@@ -242,6 +307,7 @@ export default function HealthPredict({
   function setFeature(name: string, value: string) {
     const field = FEATURE_FIELDS[mode].find((item) => item.name === name);
     if (!field) return;
+    setHasStartedInput(true);
     if (field.kind === "number") {
       updateDraft({ features: { ...features, [name]: value === "" ? "" : Number(value) } });
       return;
@@ -251,6 +317,7 @@ export default function HealthPredict({
   }
 
   function reset() {
+    setHasStartedInput(false);
     updateDraft({
       features: initialFeatures(mode),
       height: "",
@@ -264,6 +331,19 @@ export default function HealthPredict({
     });
     setResult(null);
     setError("");
+  }
+
+  async function downloadResult() {
+    if (!result) return;
+    setDownloadBusy(true);
+    setDownloadError("");
+    try {
+      await mlService.downloadPredictionPdf(result.predictionId);
+    } catch (cause) {
+      setDownloadError(cause instanceof ApiError ? cause.message : "Không thể tải tệp PDF.");
+    } finally {
+      setDownloadBusy(false);
+    }
   }
 
   async function submit(event: FormEvent) {
@@ -372,9 +452,15 @@ export default function HealthPredict({
     : result ? "Kết quả sàng lọc dựa trên dữ liệu đã cung cấp." : "Nhập thông tin khảo sát để ước tính kết quả từ mô hình và lưu vào lịch sử.";
 
   const visibleGroups = FEATURE_GROUPS.filter((group) => !group.clinicalOnly || mode === "clinical");
-  const stepOffset = target === "patient" ? 1 : 0;
   const sexField = FEATURE_FIELDS[mode].find((field) => field.name === "sex");
   const bmiText = bmi !== null ? bmi.toLocaleString("vi-VN", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : null;
+  const groupStepOffset = target === "patient" ? 1 : 0;
+  const wizardSteps = [
+    ...(target === "patient" ? ["Hồ sơ bệnh nhân"] : []),
+    ...visibleGroups.map((group) => group.title),
+    "Xem lại",
+  ];
+  const completedSteps = wizardStep;
 
   return (
     <div>
@@ -385,7 +471,8 @@ export default function HealthPredict({
         {busy ? (
           <PredictionLoadingView mode={mode} />
         ) : result ? (
-          <PredictionResultView result={result} onReset={() => setResult(null)} />
+          <PredictionResultView result={result} onReset={() => setResult(null)}
+            onDownload={() => void downloadResult()} downloadBusy={downloadBusy} downloadError={downloadError} />
         ) : (
           <>
             <section className="dg-predict-hero" aria-label="Minh họa đánh giá sức khỏe">
@@ -402,47 +489,85 @@ export default function HealthPredict({
             {error && <div className="dg-notice dg-notice--error" role="alert"><CircleAlert aria-hidden="true" /><span>{error}</span></div>}
             {target === "patient" && patientLoadError && <div className="dg-notice dg-notice--error" role="alert"><CircleAlert aria-hidden="true" /><span>{patientLoadError}</span></div>}
 
-            <form className="dg-sections" onSubmit={(event) => void submit(event)}>
-          {target === "patient" && (
+            <div className="dg-wizard-layout">
+              <aside className="dg-wizard-stepper" aria-label="Tiến trình đánh giá">
+                <span className="dg-wizard-stepper-label">BƯỚC {wizardStep + 1}/{wizardSteps.length}</span>
+                <ol>
+                  {wizardSteps.map((label, index) => (
+                    <li key={label} className={index === wizardStep ? "is-current" : index < completedSteps ? "is-complete" : ""}>
+                      <span>{index + 1}</span>
+                      <div><b>{label}</b><small>{index < wizardStep ? "Đã hoàn tất" : index === wizardStep ? "Đang hoàn tất" : "Chưa hoàn tất"}</small></div>
+                    </li>
+                  ))}
+                </ol>
+              </aside>
+
+              <form className="dg-sections dg-wizard-main" onSubmit={(event) => void submit(event)}>
+          {target === "patient" && wizardStep === 0 && (
             <Section step={1} title="Hồ sơ bệnh nhân" hint="Chọn hồ sơ đã có hoặc nhập bệnh nhân mới.">
               <div className="dg-card dg-card--grid">
                 <div className="dg-fields">
-                  <Field id="patient-select" label="Hồ sơ đã có">
-                    <select id="patient-select" className="dg-input" value={selectedPatientId} onChange={(event) => {
-                      const patientId = event.target.value;
-                      const patient = existingPatients.find((item) => item.patientId === patientId);
-                      updateDraft({
-                        selectedPatientId: patientId,
-                        patientName: patient?.fullName ?? "",
-                        patientCode: patient?.patientCode ?? "",
-                        patientBirthdate: formatDateOfBirth(patient?.birthdate),
-                        patientGender: patient?.gender ?? "",
-                        patientPhone: patient?.phone ?? "",
-                      });
-                    }}>
-                      <option value="">Tạo hồ sơ mới</option>
-                      {existingPatients.map((patient) => <option key={patient.patientId} value={patient.patientId}>{patient.patientCode} · {patient.fullName}</option>)}
-                    </select>
+                  <Field id="patient-select" label="Tìm hồ sơ đã có">
+                    <div className="dg-patient-combobox">
+                      <input id="patient-select" className="dg-input" role="combobox" aria-autocomplete="list"
+                        aria-expanded={patientOptionsOpen} aria-controls="patient-options" autoComplete="off"
+                        placeholder="Tìm tên, số điện thoại hoặc mã bệnh nhân"
+                        value={patientSearch}
+                        onFocus={() => setPatientOptionsOpen(true)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") setPatientOptionsOpen(false);
+                        }}
+                        onChange={(event) => {
+                          setHasStartedInput(true);
+                          const value = event.target.value;
+                          setPatientSearch(value);
+                          setPatientOptionsOpen(true);
+                          if (selectedPatientId) updateDraft({
+                            selectedPatientId: "",
+                            patientName: "",
+                            patientCode: "",
+                            patientBirthdate: "",
+                            patientGender: "",
+                            patientPhone: "",
+                          });
+                        }} />
+                      {patientOptionsOpen && (
+                        <div id="patient-options" role="listbox" className="dg-patient-options">
+                          <button type="button" role="option" aria-selected={!selectedPatientId} onClick={() => void choosePatient(null)}>
+                            <strong>+ Tạo hồ sơ mới</strong>
+                          </button>
+                          {existingPatients.map((patient) => (
+                            <button type="button" role="option" aria-selected={selectedPatientId === patient.patientId}
+                              key={patient.patientId} onClick={() => void choosePatient(patient)}>
+                              <strong>{patient.fullName}</strong>
+                              <span>{patient.patientCode} · {patient.phone || "Chưa có SĐT"}</span>
+                            </button>
+                          ))}
+                          {!existingPatients.length && <p role="status">Không tìm thấy hồ sơ phù hợp.</p>}
+                        </div>
+                      )}
+                    </div>
+                    {patientPrefillBusy && <p className="dg-row-hint" role="status">Đang tải dữ liệu gần nhất ở chế độ {mode === "clinical" ? "lâm sàng" : "phi lâm sàng"}…</p>}
                   </Field>
                   {!selectedPatientId ? <>
                     <Field id="patient-name" label="Họ và tên">
-                      <input id="patient-name" className="dg-input" value={patientName} onChange={(event) => updateDraft({ patientName: event.target.value })} required minLength={2} maxLength={120} />
+                      <input id="patient-name" className="dg-input" value={patientName} onChange={(event) => { setHasStartedInput(true); updateDraft({ patientName: event.target.value }); }} required minLength={2} maxLength={120} />
                     </Field>
                     <Field id="patient-code" label="Mã bệnh nhân (không bắt buộc)">
-                      <input id="patient-code" className="dg-input" value={patientCode} onChange={(event) => updateDraft({ patientCode: event.target.value })}
+                      <input id="patient-code" className="dg-input" value={patientCode} onChange={(event) => { setHasStartedInput(true); updateDraft({ patientCode: event.target.value }); }}
                         placeholder="Ví dụ: BN-001" maxLength={40} />
                     </Field>
                     <Field id="patient-birthdate" label="Ngày sinh">
                       <input id="patient-birthdate" className="dg-input" type="text" inputMode="numeric" maxLength={10}
                         placeholder="dd/mm/yyyy" value={patientBirthdate}
-                        onChange={(event) => updateDraft({ patientBirthdate: event.target.value })} required />
+                        onChange={(event) => { setHasStartedInput(true); updateDraft({ patientBirthdate: event.target.value }); }} required />
                     </Field>
                     <Field label="Giới tính">
-                      <Segmented label="Giới tính bệnh nhân" value={patientGender} onChange={(value) => updateDraft({ patientGender: value as Gender })}
+                      <Segmented label="Giới tính bệnh nhân" value={patientGender} onChange={(value) => { setHasStartedInput(true); updateDraft({ patientGender: value as Gender }); }}
                         options={[{ value: "male", label: "Nam" }, { value: "female", label: "Nữ" }]} />
                     </Field>
                     <Field id="patient-phone" label="Số điện thoại">
-                      <input id="patient-phone" className="dg-input" value={patientPhone} onChange={(event) => updateDraft({ patientPhone: event.target.value })} />
+                      <input id="patient-phone" className="dg-input" value={patientPhone} onChange={(event) => { setHasStartedInput(true); updateDraft({ patientPhone: event.target.value }); }} />
                     </Field>
                   </> : (
                     <div className="dg-patient-summary">
@@ -456,8 +581,11 @@ export default function HealthPredict({
             </Section>
           )}
 
-          {visibleGroups.map((group, index) => (
-            <Section key={group.id} step={index + 1 + stepOffset} title={group.title} hint={group.hint}>
+          {visibleGroups.map((group, index) => {
+            const groupStep = index + groupStepOffset;
+            if (groupStep !== wizardStep) return null;
+            return (
+            <Section key={group.id} step={groupStep + 1} title={group.title} hint={group.hint}>
               {group.id === "basic" ? (
                 <div className="dg-card dg-card--grid">
                   <div className="dg-fields dg-fields--4">
@@ -465,7 +593,7 @@ export default function HealthPredict({
                       <Field id="self-birthdate" label="Ngày sinh">
                         <input id="self-birthdate" className="dg-input" type="text" inputMode="numeric" maxLength={10}
                         placeholder="dd/mm/yyyy" value={patientBirthdate}
-                        onChange={(event) => updateDraft({ patientBirthdate: event.target.value })} required />
+                        onChange={(event) => { setHasStartedInput(true); updateDraft({ patientBirthdate: event.target.value }); }} required />
                       </Field>
                     )}
                     <Field id="feature-age" label="Tuổi (tự động)">
@@ -480,14 +608,14 @@ export default function HealthPredict({
                     <Field id="feature-height" label="Chiều cao">
                       <div className="dg-unit">
                         <input id="feature-height" className="dg-input" type="number" inputMode="decimal" min={100} max={250} step={0.1} required
-                          placeholder="Ví dụ: 165" value={height} onChange={(event) => updateDraft({ height: event.target.value })} />
+                          placeholder="Ví dụ: 165" value={height} onChange={(event) => { setHasStartedInput(true); updateDraft({ height: event.target.value }); }} />
                         <span>cm</span>
                       </div>
                     </Field>
                     <Field id="feature-weight" label="Cân nặng">
                       <div className="dg-unit">
                         <input id="feature-weight" className="dg-input" type="number" inputMode="decimal" min={20} max={300} step={0.1} required
-                          placeholder="Ví dụ: 60" value={weight} onChange={(event) => updateDraft({ weight: event.target.value })} />
+                          placeholder="Ví dụ: 60" value={weight} onChange={(event) => { setHasStartedInput(true); updateDraft({ weight: event.target.value }); }} />
                         <span>kg</span>
                       </div>
                     </Field>
@@ -507,21 +635,46 @@ export default function HealthPredict({
                 </div>
               )}
             </Section>
-          ))}
+            );
+          })}
+
+          {wizardStep === wizardSteps.length - 1 && (
+            <section className="dg-review-panel" aria-labelledby="wizard-review-title">
+              <h2 id="wizard-review-title">Xem lại thông tin trước khi dự đoán</h2>
+              <p>Kiểm tra ngày sinh, giới tính, chiều cao, cân nặng và các câu đã trả lời. Bạn có thể quay lại thay đổi trước khi gửi mô hình.</p>
+              <div className="dg-review-grid">
+                {target === "patient" && <div><span>Bệnh nhân</span><strong>{selectedPatient?.fullName || patientName || "Chưa nhập"}</strong></div>}
+                <div><span>Tuổi</span><strong>{age ?? "Chưa có"}</strong></div>
+                <div><span>BMI</span><strong>{bmiText ? `${bmiText} kg/m²` : "Chưa có"}</strong></div>
+                <div><span>Câu chưa trả lời</span><strong>{missingOptional}</strong></div>
+              </div>
+            </section>
+          )}
 
           <div className="dg-actions">
-            {tooManyMissing && <div className="dg-notice dg-notice--warning" role="alert">
+            {hasStartedInput && tooManyMissing && <div className="dg-notice dg-notice--warning" role="alert">
               <AlertTriangle aria-hidden="true" /><span>{missingMessage}</span>
             </div>}
             <div className="dg-actions-buttons">
-              <button type="button" className="dg-btn-secondary" onClick={reset} disabled={busy}>Đặt lại</button>
-              <button type="submit" className="dg-submit" disabled={busy || tooManyMissing}>
-                {busy ? <Loader2 className="dg-spin" /> : <Activity />}
-                {busy ? "Đang xử lý..." : "Dự đoán ngay"}
-              </button>
+              {wizardStep > 0 ? (
+                <button type="button" className="dg-btn-secondary" onClick={() => setWizardStep((step) => Math.max(0, step - 1))} disabled={busy}>Quay lại</button>
+              ) : (
+                <button type="button" className="dg-btn-secondary" onClick={reset} disabled={busy}>Đặt lại</button>
+              )}
+              {wizardStep < wizardSteps.length - 1 ? (
+                <button type="button" className="dg-submit" onClick={() => setWizardStep((step) => Math.min(wizardSteps.length - 1, step + 1))}>
+                  Tiếp tục
+                </button>
+              ) : (
+                <button type="submit" className="dg-submit" disabled={busy || tooManyMissing}>
+                  {busy ? <Loader2 className="dg-spin" /> : <Activity />}
+                  {busy ? "Đang xử lý..." : "Dự đoán ngay"}
+                </button>
+              )}
             </div>
           </div>
-            </form>
+              </form>
+            </div>
           </>
         )}
       </div>

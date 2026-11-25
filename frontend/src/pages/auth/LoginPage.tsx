@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { AlertCircle, CheckCircle2, Eye, EyeOff, Loader2, LockKeyhole, UserRound } from "lucide-react";
+import { AlertCircle, CheckCircle2, Eye, EyeOff, Home, Loader2, LockKeyhole, UserRound } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { ApiError } from "../../services/api";
@@ -130,6 +130,7 @@ export default function LoginPage() {
           </p>
         </section>
       </div>
+      <Link to="/" className="fg-home-link"><Home aria-hidden="true" /> Về trang chủ</Link>
     </main>
   );
 }

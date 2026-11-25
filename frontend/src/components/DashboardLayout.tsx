@@ -1,7 +1,9 @@
-import { LogOut } from "lucide-react";
+import { Menu, X, LogOut } from "lucide-react";
+import { useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import UserAvatar from "./UserAvatar";
 import "../dashboard.css";
 
 export interface NavItem {
@@ -21,17 +23,11 @@ const ROLE_LABELS: Record<string, string> = {
   user: "Người dùng phổ thông",
 };
 
-function initials(name?: string): string {
-  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  const first = parts[0][0] ?? "";
-  const last = parts.length > 1 ? parts[parts.length - 1][0] ?? "" : "";
-  return (first + last).toUpperCase();
-}
-
 export default function DashboardLayout({ sections }: { sections: NavSection[] }) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   async function logout() {
     await signOut();
@@ -40,9 +36,16 @@ export default function DashboardLayout({ sections }: { sections: NavSection[] }
 
   return (
     <div className="dg-app">
-      <aside className="dg-sidebar">
+      <button type="button" className="dg-mobile-menu" aria-label="Mở điều hướng" aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen(true)}>
+        <Menu aria-hidden="true" />
+      </button>
+      {mobileNavOpen && <button type="button" className="dg-sidebar-backdrop" aria-label="Đóng điều hướng" onClick={() => setMobileNavOpen(false)} />}
+      <aside className={`dg-sidebar${mobileNavOpen ? " is-open" : ""}`}>
+        <button type="button" className="dg-sidebar-close" aria-label="Đóng điều hướng" onClick={() => setMobileNavOpen(false)}>
+          <X aria-hidden="true" />
+        </button>
         <div className="dg-usercard">
-          <span className="dg-avatar" aria-hidden="true">{initials(user?.name)}</span>
+          <UserAvatar name={user?.name} src={user?.avatar} className="dg-avatar" />
           <div className="min-w-0">
             <p className="dg-username" title={user?.name}>{user?.name}</p>
             <p className="dg-role">{ROLE_LABELS[user?.role ?? "user"] ?? "Người dùng"}</p>
@@ -55,7 +58,7 @@ export default function DashboardLayout({ sections }: { sections: NavSection[] }
               <h2 className="dg-nav-title">{section.title}</h2>
               <div className="dg-nav-list">
                 {section.items.map(({ to, label, icon: Icon }) => (
-                  <NavLink key={to} to={to} className={({ isActive }) => `dg-nav-item${isActive ? " is-active" : ""}`}>
+                  <NavLink key={to} to={to} end onClick={() => setMobileNavOpen(false)} className={({ isActive }) => `dg-nav-item${isActive ? " is-active" : ""}`}>
                     <Icon aria-hidden="true" />
                     <span>{label}</span>
                   </NavLink>
@@ -72,7 +75,9 @@ export default function DashboardLayout({ sections }: { sections: NavSection[] }
       </aside>
 
       <main className="dg-main">
-        <Outlet />
+        <div key={location.pathname} className="dg-page-transition">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

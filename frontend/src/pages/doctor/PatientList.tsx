@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Eye, Loader2, Search, Trash2 } from "lucide-react";
+import { Download, Eye, Loader2, Search, Trash2 } from "lucide-react";
 import Header from "../../components/Header";
 import { ConfirmDialog, Modal } from "../../components/Modal";
 import PredictionResultCard, { RiskBadge } from "../../components/Sidebar";
-import { DgPagination, FilterTabs, MessageBox, ModeBadge, Probability, localDateKey, splitDateTime } from "../../components/HistoryUI";
+import { DgPagination, MessageBox, ModeBadge, Probability, localDateKey, splitDateTime } from "../../components/HistoryUI";
 import { FEATURE_LABELS } from "../../config/features";
 import { ApiError } from "../../services/api";
 import { mlService } from "../../services/mlService";
@@ -13,9 +13,9 @@ import "../../dashboard.css";
 const PAGE_SIZE = 6;
 
 type ModeTab = "all" | PredictionMode;
-type Row = { prediction: PredictionListItem; patient: Patient };
+type Row = { prediction: PredictionListItem; patient: Pick<Patient, "patientId" | "fullName" | "patientCode"> };
 type Factor = { label: string; up: boolean };
-type Extra = { bmi?: number; factors: Factor[] };
+type Extra = { bmi?: number; factors: Factor[]; error?: boolean };
 
 /** Lấy tối đa 2 yếu tố có ảnh hưởng lớn nhất từ dữ liệu SHAP (nhận nhiều dạng dữ liệu, không nhận ra thì trả mảng rỗng). */
 function topFactors(shap: unknown): Factor[] {
@@ -62,26 +62,33 @@ export default function PatientList() {
   const [draft, setDraft] = useState<{ risk: RiskLevel | ""; from: string; to: string }>({ risk: "", from: "", to: "" });
   const [applied, setApplied] = useState(draft);
   const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
   const [extras, setExtras] = useState<Record<string, Extra>>({});
   const requested = useRef(new Set<string>());
 
   const [detail, setDetail] = useState<PredictionResult | null>(null);
   const [toDelete, setToDelete] = useState<Row | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   /** Gộp các lần dự đoán của mọi bệnh nhân thành một danh sách phẳng, mới nhất ở trên. */
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const patients = await mlService.patients({ pageSize: 100 });
-      const lists = await Promise.all(patients.items.map(async (patient) => {
-        const predictions = await mlService.patientPredictions(patient.patientId);
-        return predictions.map((prediction) => ({ prediction, patient }));
-      }));
-      const all = lists.reduce<Row[]>((sum, list) => sum.concat(list), []);
-      all.sort((a, b) => new Date(b.prediction.createdAt).getTime() - new Date(a.prediction.createdAt).getTime());
+      const all: Row[] = [];
+      let historyPage = 1;
+      let total = 0;
+      do {
+        const result = await mlService.history({ scope: "patients", page: historyPage, pageSize: 100 });
+        total = result.total;
+        all.push(...result.items.flatMap((prediction) => prediction.patientId && prediction.patientName && prediction.patientCode
+          ? [{ prediction, patient: { patientId: prediction.patientId, fullName: prediction.patientName, patientCode: prediction.patientCode } }]
+          : []));
+        historyPage += 1;
+      } while (all.length < total && historyPage <= Math.ceil(total / 100) + 1);
       setRows(all);
     } catch (cause) {
       setRows(null);
@@ -99,7 +106,7 @@ export default function PatientList() {
     const key = localDateKey(prediction.createdAt);
     if (applied.from && key < applied.from) return false;
     if (applied.to && key > applied.to) return false;
-    if (needle && !`${patient.fullName} ${patient.patientCode} ${patient.phone ?? ""}`.toLowerCase().includes(needle)) return false;
+    if (needle && !`${patient.fullName} ${patient.patientCode}`.toLowerCase().includes(needle)) return false;
     return true;
   }), [rows, modeTab, applied, needle]);
 
@@ -118,16 +125,10 @@ export default function PatientList() {
       try {
         return [id, toExtra(await mlService.detail(id))] as const;
       } catch {
-        return [id, { factors: [] } as Extra] as const;
+        return [id, { factors: [], error: true } as Extra] as const;
       }
     })).then((entries) => setExtras((previous) => ({ ...previous, ...Object.fromEntries(entries) })));
   }, [pageItems]);
-
-  const counts = {
-    all: rows?.length ?? 0,
-    nonclinical: rows?.filter((row) => row.prediction.mode === "nonclinical").length ?? 0,
-    clinical: rows?.filter((row) => row.prediction.mode === "clinical").length ?? 0,
-  };
 
   const dateError = draft.from && draft.to && draft.from > draft.to ? "Ngày bắt đầu phải trước ngày kết thúc." : "";
   const hasFilter = modeTab !== "all" || q !== "" || applied.risk !== "" || applied.from !== "" || applied.to !== "";
@@ -147,11 +148,24 @@ export default function PatientList() {
     try { setDetail(await mlService.detail(id)); }
     catch (cause) { setError(cause instanceof ApiError ? cause.message : "Không tải được chi tiết."); }
   }
+  async function downloadDetail() {
+    if (!detail) return;
+    setPdfBusy(true);
+    setError("");
+    try { await mlService.downloadPredictionPdf(detail.predictionId); }
+    catch (cause) { setError(cause instanceof ApiError ? cause.message : "Không thể tải tệp PDF."); }
+    finally { setPdfBusy(false); }
+  }
   async function remove() {
     if (!toDelete) return;
     setBusy(true);
     try {
       await mlService.remove(toDelete.prediction.predictionId);
+      setSelectedIds((previous) => {
+        const next = new Set(previous);
+        next.delete(toDelete.prediction.predictionId);
+        return next;
+      });
       setToDelete(null);
       await loadAll();
       setNotice("Đã xóa bản ghi dự đoán thành công.");
@@ -161,27 +175,89 @@ export default function PatientList() {
     } finally { setBusy(false); }
   }
 
+  async function removeSelected() {
+    if (!selectedIds.size) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await mlService.removeMany([...selectedIds]);
+      setSelectedIds(new Set());
+      setBulkDeleteOpen(false);
+      await loadAll();
+      setNotice(`Đã xóa ${result.deletedCount} bản ghi đánh giá. Hồ sơ bệnh nhân vẫn được giữ nguyên.`);
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "Không xóa được các bản ghi đã chọn.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleSelection(id: string) {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else if (next.size < 100) next.add(id);
+    else {
+      setError("Có thể chọn tối đa 100 bản ghi cho mỗi lần xóa.");
+      return;
+    }
+    setSelectedIds(next);
+  }
+
+  const pageIds = pageItems.map((row) => row.prediction.predictionId);
+  const pageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+  function togglePageSelection() {
+    if (pageSelected) {
+      setSelectedIds((previous) => {
+        const next = new Set(previous);
+        pageIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      return;
+    }
+    const additions = pageIds.filter((id) => !selectedIds.has(id));
+    if (selectedIds.size + additions.length > 100) {
+      setError("Có thể chọn tối đa 100 bản ghi cho mỗi lần xóa.");
+      return;
+    }
+    setError("");
+    setSelectedIds((previous) => new Set([...previous, ...additions]));
+  }
+
   return (
     <div>
-      <Header title="Lịch sử bệnh nhân" subtitle="Các lần đánh giá của bệnh nhân theo chế độ phi lâm sàng và lâm sàng" />
+      <Header
+        title="Lịch sử bệnh nhân"
+        subtitle={`${filtered.length ? `${filtered.length} đánh giá đã lọc` : `${rows?.length ?? 0} đánh giá`} · dữ liệu lấy từ lịch sử dự đoán hiện có`}
+        actions={<button type="button" className="dh-primary-action" onClick={() => window.location.assign("/doctor/predict")}>+ Đánh giá mới</button>}
+      />
       {error && <div className="mb-3"><MessageBox tone="error">{error}</MessageBox></div>}
       {notice && <div className="mb-3"><MessageBox tone="success">{notice}</MessageBox></div>}
+      {selectedIds.size > 0 && (
+        <div className="dh-selection-bar" role="status">
+          <span>Đã chọn <strong>{selectedIds.size}</strong> bản ghi đánh giá (không xóa hồ sơ bệnh nhân).</span>
+          <div>
+            <button type="button" className="dh-btn-soft" onClick={() => setSelectedIds(new Set())}>Bỏ chọn</button>
+            <button type="button" className="dh-btn-danger" onClick={() => setBulkDeleteOpen(true)}>Xóa đã chọn</button>
+          </div>
+        </div>
+      )}
 
       <section className="dh-hist-card">
-        <FilterTabs<ModeTab> label="Lọc theo chế độ" value={modeTab} onChange={setModeTab}
-          tabs={[
-            { id: "all", label: "Tất cả", count: counts.all },
-            { id: "nonclinical", label: "Phi lâm sàng", count: counts.nonclinical },
-            { id: "clinical", label: "Lâm sàng", count: counts.clinical },
-          ]} />
-
         <div className="dh-search dh-search--bar">
           <Search aria-hidden="true" />
-          <input className="dg-input" aria-label="Tìm theo tên, mã hoặc số điện thoại bệnh nhân" placeholder="Tìm kiếm tên, mã hoặc số điện thoại bệnh nhân"
+          <input className="dg-input" aria-label="Tìm theo tên hoặc mã bệnh nhân" placeholder="Tìm kiếm tên hoặc mã bệnh nhân"
             value={q} onChange={(event) => setQ(event.target.value)} />
         </div>
 
         <form className="dh-toolbar" onSubmit={applyFilters}>
+          <div className="dh-toolbar-field">
+            <label className="dg-label" htmlFor="f-mode">Chế độ</label>
+            <select id="f-mode" className="dg-input" value={modeTab} onChange={(event) => setModeTab(event.target.value as ModeTab)}>
+              <option value="all">Tất cả chế độ</option>
+              <option value="nonclinical">Phi lâm sàng</option>
+              <option value="clinical">Lâm sàng</option>
+            </select>
+          </div>
           <div className="dh-toolbar-field">
             <label className="dg-label" htmlFor="f-risk">Mức nguy cơ</label>
             <select id="f-risk" className="dg-input" value={draft.risk} onChange={(event) => setDraft({ ...draft, risk: event.target.value as RiskLevel | "" })}>
@@ -211,8 +287,9 @@ export default function PatientList() {
                   <table className="dh-table dh-table--wide">
                     <thead>
                       <tr>
-                        <th>Ngày đánh giá</th><th>Bệnh nhân</th><th>Chế độ</th><th>Xác suất</th><th>Mức nguy cơ</th><th>BMI</th><th>Yếu tố chính</th>
-                        <th><span className="sr-only">Thao tác</span></th>
+                        <th><input type="checkbox" aria-label="Chọn tất cả đánh giá trên trang này" checked={pageSelected} onChange={togglePageSelection} /></th>
+                        <th>Bệnh nhân</th><th>Ngày đánh giá</th><th>Chế độ</th><th>Xác suất</th><th>Mức nguy cơ</th><th>BMI</th><th>Yếu tố chính</th>
+                        <th>Thao tác</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -222,15 +299,22 @@ export default function PatientList() {
                         const extra = extras[prediction.predictionId];
                         return (
                           <tr key={prediction.predictionId}>
+                            <td><input type="checkbox" aria-label={`Chọn đánh giá ${patient.fullName}`} checked={selectedIds.has(prediction.predictionId)}
+                              onChange={() => toggleSelection(prediction.predictionId)} /></td>
+                            <td>
+                              <div className="dh-patient-cell">
+                                <span className="dh-patient-avatar" aria-hidden="true">{patient.fullName.trim().split(/\s+/).slice(-2).map((part) => part[0]).join("").toUpperCase()}</span>
+                                <span><b>{patient.fullName}</b><small>{patient.patientCode}</small></span>
+                              </div>
+                            </td>
                             <td><span className="dh-cell-strong">{when.date}</span><span className="dh-cell-sub">{when.time}</span></td>
-                            <td><span className="dh-cell-strong">{patient.fullName}</span><span className="dh-cell-sub">{patient.phone ?? patient.patientCode}</span></td>
                             <td><ModeBadge mode={prediction.mode} /></td>
                             <td><Probability value={prediction.probability} level={prediction.riskLevel} /></td>
                             <td><RiskBadge level={prediction.riskLevel} /></td>
-                            <td>{extra ? (extra.bmi !== undefined ? extra.bmi.toFixed(1) : "—") : <span className="dh-cell-sub">…</span>}</td>
+                            <td>{extra ? (extra.error ? "Không tải được" : extra.bmi !== undefined ? extra.bmi.toFixed(1) : "—") : <span className="dh-cell-sub">…</span>}</td>
                             <td>
                               {extra
-                                ? extra.factors.length
+                                ? extra.error ? "Không tải được" : extra.factors.length
                                   ? <ul className="dh-factors">{extra.factors.map((factor) => (
                                     <li key={factor.label} className={factor.up ? "is-up" : "is-down"}><span aria-hidden="true">{factor.up ? "↑" : "↓"}</span>{factor.label}</li>
                                   ))}</ul>
@@ -253,8 +337,28 @@ export default function PatientList() {
               </>)}
       </section>
 
-      {detail && <Modal title="Chi tiết lần dự đoán" wide onClose={() => setDetail(null)}><PredictionResultCard result={detail} /></Modal>}
-      {toDelete && <ConfirmDialog title="Xóa bản ghi" message="Bạn có chắc chắn muốn xóa bản ghi này?" confirmLabel="Xóa" busy={busy} onConfirm={remove} onCancel={() => setToDelete(null)} />}
+      {detail && <Modal title="Chi tiết lần dự đoán" wide onClose={() => setDetail(null)}>
+        <PredictionResultCard result={detail} />
+        <button type="button" className="btn-ghost mt-4" onClick={() => void downloadDetail()} disabled={pdfBusy}>
+          {pdfBusy ? <Loader2 className="dg-spin" aria-hidden="true" /> : <Download aria-hidden="true" />} Tải kết quả PDF
+        </button>
+      </Modal>}
+      {toDelete && <ConfirmDialog
+        title="Xóa bản ghi đánh giá"
+        message="Bạn có chắc chắn muốn xóa bản ghi đánh giá này? Hồ sơ bệnh nhân sẽ được giữ nguyên."
+        confirmLabel="Xóa bản ghi"
+        busy={busy}
+        onConfirm={remove}
+        onCancel={() => setToDelete(null)}
+      />}
+      {bulkDeleteOpen && <ConfirmDialog
+        title="Xóa nhiều bản ghi đánh giá"
+        message={`Bạn sắp xóa ${selectedIds.size} bản ghi đánh giá. Thao tác này chỉ xóa lịch sử đánh giá đã chọn, không xóa hồ sơ bệnh nhân. Bạn có chắc chắn?`}
+        confirmLabel="Xóa bản ghi"
+        busy={busy}
+        onConfirm={removeSelected}
+        onCancel={() => setBulkDeleteOpen(false)}
+      />}
     </div>
   );
 }

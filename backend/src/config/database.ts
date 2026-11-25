@@ -13,6 +13,7 @@ const collectionNames = [
   'batch_row_errors',
   'excel_templates',
   'activity_logs',
+  'password_reset_tokens',
 ] as const;
 
 export async function connectDatabase(): Promise<Db> {
@@ -41,6 +42,10 @@ export async function connectDatabase(): Promise<Db> {
     db.collection('batch_row_errors').createIndex({ batchId: 1, rowNo: 1 }),
     db.collection('excel_templates').createIndex({ isActive: 1, uploadedAt: -1 }),
     db.collection('activity_logs').createIndex({ createdAt: -1 }),
+    db.collection('password_reset_tokens').createIndex({ tokenHash: 1 }, { unique: true }),
+    db.collection('password_reset_tokens').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    db.collection('password_reset_tokens').createIndex({ emailHash: 1, createdAt: -1 }),
+    db.collection('password_reset_tokens').createIndex({ ipHash: 1, createdAt: -1 }),
   ]);
   console.log(`MongoDB connected: ${env.dbName}`);
   return db;

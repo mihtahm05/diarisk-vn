@@ -1,13 +1,14 @@
 import { api } from "./api";
 import { allowedFeatureNames } from "../config/features";
 import type {
-  BatchResultRow, BatchSummary, BatchValidation, Paged, Patient, PatientInfo, PredictionListItem, PredictionMode,
-  PredictionResult, ReportFormat, ReportScope, RiskLevel,
+  BatchDetail, BatchResultRow, BatchSummary, BatchValidation, Paged, Patient, PatientInfo, PredictionListItem, PredictionMode,
+  DashboardMetrics, PredictionResult, ReportFormat, ReportScope, RiskLevel,
 } from "../types";
 
 /**
  * Backend Node gọi tiếp ML service (FastAPI). Frontend chỉ nói chuyện với Node:
  *  POST   /predictions                    { mode, target, patient?, features }
+ *  POST   /predictions/bulk-delete        { predictionIds } (chỉ xóa mềm đánh giá bệnh nhân)
  *  GET    /predictions                    ?scope=mine|patients&riskLevel&from&to&q&page&pageSize
  *  GET    /predictions/:id
  *  DELETE /predictions/:id                (xoá mềm, chỉ cán bộ y tế sở hữu)
@@ -15,7 +16,9 @@ import type {
  *  GET    /patients/:id/predictions
  *  POST   /batches/validate               multipart(file)  -> BatchValidation
  *  POST   /batches/:id/confirm            -> { rows: BatchResultRow[] }
- *  GET    /batches                        -> BatchSummary[] (các đợt của cán bộ hiện tại)
+ *  GET    /batches                        -> Paged<BatchSummary> (các đợt của cán bộ hiện tại)
+ *  DELETE /batches/:id                    (ẩn mềm phiên khỏi lịch sử)
+ *  GET    /dashboard/metrics              -> tổng hợp MongoDB theo role
  *  GET    /templates/active/download
  *  POST   /reports/export                 { scope, format, patientId?, batchId?, from?, to? } -> file
  */
@@ -45,6 +48,10 @@ export interface HistoryFilter {
 }
 
 export const mlService = {
+  dashboardMetrics(): Promise<DashboardMetrics> {
+    return api.get<DashboardMetrics>("/dashboard/metrics");
+  },
+
   predict(input: PredictInput): Promise<PredictionResult> {
     return api.post<PredictionResult>("/predictions", {
       mode: input.mode,
@@ -70,8 +77,18 @@ export const mlService = {
     return api.get<PredictionResult>(`/predictions/${encodeURIComponent(id)}`);
   },
 
+  downloadPredictionPdf(id: string): Promise<void> {
+    return api.download(`/predictions/${encodeURIComponent(id)}/pdf`, {
+      fallbackName: `diarisk_prediction_${id}.pdf`,
+    });
+  },
+
   remove(id: string): Promise<void> {
     return api.delete<void>(`/predictions/${encodeURIComponent(id)}`);
+  },
+
+  removeMany(ids: string[]): Promise<{ deletedCount: number }> {
+    return api.post<{ deletedCount: number }>("/predictions/bulk-delete", { predictionIds: ids });
   },
 
   patients(f: HistoryFilter = {}): Promise<Paged<Patient>> {
@@ -95,12 +112,20 @@ export const mlService = {
     return api.upload<BatchValidation>("/batches/validate", form);
   },
 
-  confirmBatch(batchId: string): Promise<{ rows: BatchResultRow[] }> {
-    return api.post<{ rows: BatchResultRow[] }>(`/batches/${encodeURIComponent(batchId)}/confirm`);
+  confirmBatch(batchId: string): Promise<{ rows: BatchResultRow[]; errors: BatchValidation["errors"]; status: string }> {
+    return api.post<{ rows: BatchResultRow[]; errors: BatchValidation["errors"]; status: string }>(`/batches/${encodeURIComponent(batchId)}/confirm`);
   },
 
-  batches(): Promise<BatchSummary[]> {
-    return api.get<BatchSummary[]>("/batches");
+  batches(f: { page?: number; pageSize?: number } = {}): Promise<Paged<BatchSummary>> {
+    return api.get<Paged<BatchSummary>>("/batches", { page: f.page ?? 1, pageSize: f.pageSize ?? 5 });
+  },
+
+  removeBatch(batchId: string): Promise<void> {
+    return api.delete<void>(`/batches/${encodeURIComponent(batchId)}`);
+  },
+
+  batchDetail(batchId: string): Promise<BatchDetail> {
+    return api.get<BatchDetail>(`/batches/${encodeURIComponent(batchId)}`);
   },
 
   downloadTemplate(): Promise<void> {

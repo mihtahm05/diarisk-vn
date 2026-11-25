@@ -13,6 +13,17 @@ interface PatientPrivateData {
   address: string | null;
 }
 
+function searchKey(value: string): string {
+  return value.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, (letter) => letter === 'đ' ? 'd' : 'D')
+    .toLocaleLowerCase('vi');
+}
+
+function phoneSearchKey(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
 const patientSchema = z.object({
   fullName: z.string().trim().min(2).max(120),
   patientCode: z.string().trim().min(2).max(40).optional(),
@@ -80,7 +91,9 @@ export async function createPatient(req: Request, res: Response): Promise<void> 
 export async function listPatients(req: Request, res: Response): Promise<void> {
   const page = Math.max(1, Number(req.query.page) || 1);
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 10));
-  const q = typeof req.query.q === 'string' ? req.query.q.trim().toLocaleLowerCase() : '';
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  const normalizedQuery = searchKey(q);
+  const phoneQuery = phoneSearchKey(q);
   const riskLevel = typeof req.query.riskLevel === 'string' ? req.query.riskLevel.toLowerCase() : '';
   const from = typeof req.query.from === 'string' ? new Date(req.query.from) : null;
   const to = typeof req.query.to === 'string' ? new Date(req.query.to) : null;
@@ -119,9 +132,9 @@ export async function listPatients(req: Request, res: Response): Promise<void> {
     };
   }).filter((patient) => {
     const matchesText = !q
-      || patient.fullName.toLocaleLowerCase().includes(q)
-      || patient.patientCode.toLocaleLowerCase().includes(q)
-      || (patient.phone || '').toLocaleLowerCase().includes(q);
+      || searchKey(patient.fullName).includes(normalizedQuery)
+      || searchKey(patient.patientCode).includes(normalizedQuery)
+      || (phoneQuery.length > 0 && phoneSearchKey(patient.phone || '').includes(phoneQuery));
     const filteredPredictions = patient.predictions.filter((prediction) => {
       const matchesRisk = !riskLevel || prediction.riskLevel === riskLevel;
       const time = new Date(prediction.createdAt).getTime();

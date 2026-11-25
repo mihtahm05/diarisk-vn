@@ -5,6 +5,8 @@ import { useAuth } from "./context/AuthContext";
 import { ROLE_HOME } from "./services/authService";
 import LoginPage from "./pages/auth/LoginPage";
 import RegisterPage from "./pages/auth/RegisterPage";
+import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
 import UserDashboard from "./pages/user/HistoryPage";
 import HealthPredict from "./pages/user/PredictionPage";
 import DoctorDashboard from "./pages/doctor/DoctorDashboard";
@@ -15,24 +17,34 @@ import AdminDashboard from "./pages/admin/AdminDashboard";
 import AccountManagement from "./pages/admin/AccountManagement";
 import TemplateManagement from "./pages/admin/TemplateManagement";
 import ActivityLogs from "./pages/admin/ActivityLogs";
+import LandingPage from "./pages/public/LandingPage";
+import RoleOverview from "./pages/dashboard/RoleOverview";
 
 function RootRedirect() {
   const { user, loading } = useAuth();
   if (loading) return null;
-  return <Navigate to={user ? ROLE_HOME[user.role] : "/login"} replace />;
+  return <Navigate to={user ? ROLE_HOME[user.role] : "/"} replace />;
+}
+
+function LandingRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  return user ? <Navigate to={ROLE_HOME[user.role]} replace /> : <LandingPage />;
 }
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<RootRedirect />} />
+      <Route path="/" element={<LandingRoute />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       {/* Người dùng phổ thông */}
       <Route element={<ProtectedRoute roles={["user"]} />}>
         <Route path="/user" element={<UserDashboard />}>
-          <Route index element={<Navigate to="predict" replace />} />
+          <Route index element={<RoleOverview />} />
           <Route path="predict" element={<HealthPredict mode="nonclinical" target="self" />} />
           <Route path="history" element={<OwnHistoryPage />} />
           <Route path="profile" element={<ProfilePage />} />
@@ -43,7 +55,7 @@ export default function App() {
       {/* Cán bộ y tế */}
       <Route element={<ProtectedRoute roles={["doctor"]} />}>
         <Route path="/doctor" element={<DoctorDashboard />}>
-          <Route index element={<Navigate to="predict" replace />} />
+          <Route index element={<RoleOverview />} />
           <Route path="predict" element={<PatientPredictLayout />} />
           <Route path="patients" element={<PatientList />} />
           <Route path="reports" element={<ReportExport />} />
@@ -57,7 +69,7 @@ export default function App() {
       {/* Quản trị viên */}
       <Route element={<ProtectedRoute roles={["admin"]} />}>
         <Route path="/admin" element={<AdminDashboard />}>
-          <Route index element={<Navigate to="accounts" replace />} />
+          <Route index element={<RoleOverview />} />
           <Route path="accounts" element={<AccountManagement />} />
           <Route path="templates" element={<TemplateManagement />} />
           <Route path="logs" element={<ActivityLogs />} />

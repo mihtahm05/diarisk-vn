@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from "react";
-import { AlertCircle, BadgeCheck, Building2, CalendarDays, Eye, EyeOff, KeyRound, Loader2, LockKeyhole, Mail, MapPin, Phone, UserRound } from "lucide-react";
+import { AlertCircle, BadgeCheck, Building2, CalendarDays, Eye, EyeOff, Home, KeyRound, Loader2, LockKeyhole, Mail, MapPin, Phone, UserRound } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "../../services/api";
 import { authService } from "../../services/authService";
 import type { Gender } from "../../types";
-import { isStrongPassword, localISODate, parseDateOfBirth, PASSWORD_REQUIREMENT_MESSAGE } from "../../utils/validators";
+import { isStrongPassword, localISODate, normalizePhoneNumber, parseDateOfBirth, PASSWORD_REQUIREMENT_MESSAGE } from "../../utils/validators";
 import BrandPanel from "./components/BrandPanel";
 import FormField from "./components/FormField";
 import "./auth.css";
@@ -61,7 +61,7 @@ export default function RegisterPage() {
   function validate(): FieldErrors {
     const errors: FieldErrors = {};
     if (name.trim().length < 2 || name.trim().length > 120) errors.name = "Họ tên cần có từ 2 đến 120 ký tự.";
-    if (!/^\+?[\d\s().-]{8,20}$/.test(phoneNumber.trim())) errors.phoneNumber = "Nhập số điện thoại hợp lệ (8–20 ký tự).";
+    if (!normalizePhoneNumber(phoneNumber)) errors.phoneNumber = "Nhập số điện thoại hợp lệ (8–15 chữ số).";
     if (email.trim().length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors.email = "Nhập địa chỉ email hợp lệ (tối đa 254 ký tự).";
     const birthdateIso = parseDateOfBirth(birthdate);
     if (!birthdateIso || birthdateIso > today) {
@@ -235,6 +235,7 @@ export default function RegisterPage() {
           </p>
         </section>
       </div>
+      <Link to="/" className="fg-home-link"><Home aria-hidden="true" /> Về trang chủ</Link>
     </main>
   );
 }

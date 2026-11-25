@@ -6,6 +6,7 @@ import { getDb } from '../config/database';
 import { recordActivity } from '../utils/activityLog';
 import { normalizeRole } from '../utils/objectId';
 import { isStrongPassword, PASSWORD_REQUIREMENT_MESSAGE } from '../utils/password';
+import { normalizePhoneNumber } from '../utils/phone';
 
 // =====================================================
 // 1. VALIDATION
@@ -109,6 +110,16 @@ export async function updateMe(
   const db = getDb();
   const userId = req.auth!.userId;
   const value = parsed.data;
+  const normalizedPhone = value.phoneNumber === undefined
+    ? undefined
+    : normalizePhoneNumber(value.phoneNumber);
+  if (normalizedPhone === null) {
+    res.status(400).json({
+      message: 'Số điện thoại không hợp lệ.',
+      fieldErrors: { phoneNumber: 'Nhập số điện thoại hợp lệ (8–15 chữ số).' },
+    });
+    return;
+  }
   const now = new Date();
 
   // Xác nhận tài khoản tồn tại.
@@ -199,8 +210,24 @@ export async function updateMe(
     changes.address = value.address || null;
   }
 
-  if (value.phoneNumber !== undefined) {
-    changes.phoneNumber = value.phoneNumber || null;
+  if (normalizedPhone !== undefined) {
+    if (normalizedPhone) {
+      const usersWithPhone = await db.collection('users')
+        .find({ phoneNumber: { $type: 'string' }, deletedAt: null }, { projection: { _id: 1, phoneNumber: 1 } })
+        .toArray();
+      const duplicate = usersWithPhone.some((candidate) =>
+        !candidate._id.equals(userId)
+        && normalizePhoneNumber(String(candidate.phoneNumber)) === normalizedPhone,
+      );
+      if (duplicate) {
+        res.status(409).json({
+          message: 'Số điện thoại đã được sử dụng.',
+          fieldErrors: { phoneNumber: 'Số điện thoại này đã được đăng ký.' },
+        });
+        return;
+      }
+    }
+    changes.phoneNumber = normalizedPhone || null;
   }
 
   try {

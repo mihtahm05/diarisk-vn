@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Eye, Loader2 } from "lucide-react";
+import { Download, Eye, Loader2 } from "lucide-react";
 import Header from "./Header";
 import { Modal } from "./Modal";
 import PredictionResultCard, { RiskBadge } from "./Sidebar";
@@ -18,6 +18,7 @@ export function OwnHistoryPage() {
   const [error, setError] = useState("");
   const [detail, setDetail] = useState<PredictionResult | null>(null);
   const [busyId, setBusyId] = useState("");
+  const [downloadBusy, setDownloadBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,6 +43,19 @@ export function OwnHistoryPage() {
       setError(cause instanceof ApiError ? cause.message : "Không tải được chi tiết dự đoán.");
     } finally {
       setBusyId("");
+    }
+  }
+
+  async function downloadDetail() {
+    if (!detail) return;
+    setDownloadBusy(true);
+    setError("");
+    try {
+      await mlService.downloadPredictionPdf(detail.predictionId);
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "Không thể tải tệp PDF.");
+    } finally {
+      setDownloadBusy(false);
     }
   }
 
@@ -100,7 +114,12 @@ export function OwnHistoryPage() {
         )}
       </section>
 
-      {detail && <Modal title="Chi tiết dự đoán" wide onClose={() => setDetail(null)}><PredictionResultCard result={detail} /></Modal>}
+      {detail && <Modal title="Chi tiết dự đoán" wide onClose={() => setDetail(null)}>
+        <PredictionResultCard result={detail} />
+        <button type="button" className="btn-ghost mt-4" onClick={() => void downloadDetail()} disabled={downloadBusy}>
+          {downloadBusy ? <Loader2 className="dg-spin" aria-hidden="true" /> : <Download aria-hidden="true" />} Tải kết quả PDF
+        </button>
+      </Modal>}
     </div>
   );
 }

@@ -1,7 +1,13 @@
-import { FileSpreadsheet, ScrollText, UserRound, Users } from "lucide-react";
+import { FileSpreadsheet, LayoutDashboard, ScrollText, UserRound, Users } from "lucide-react";
 import DashboardLayout, { type NavSection } from "../../components/DashboardLayout";
 
 export const ADMIN_NAV: NavSection[] = [
+  {
+    title: "Tổng quan",
+    items: [
+      { to: "/admin", label: "Dashboard hệ thống", icon: LayoutDashboard },
+    ],
+  },
   {
     title: "Hồ sơ cá nhân",
     items: [

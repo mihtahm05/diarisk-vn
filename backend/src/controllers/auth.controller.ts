@@ -9,6 +9,7 @@ import { env } from '../config/env';
 import { recordActivity } from '../utils/activityLog';
 import { normalizeRole } from '../utils/objectId';
 import { isStrongPassword, PASSWORD_REQUIREMENT_MESSAGE } from '../utils/password';
+import { normalizePhoneNumber } from '../utils/phone';
 
 const registerSchema = z.object({
   role: z.enum(['user', 'doctor']).default('user'),
@@ -66,7 +67,14 @@ export async function register(req: Request, res: Response, next: NextFunction):
   const value = parsed.data;
   const db = getDb();
   const email = value.email.toLowerCase();
-  const phoneNumber = value.phoneNumber || undefined;
+  const phoneNumber = normalizePhoneNumber(value.phoneNumber);
+  if (!phoneNumber) {
+    res.status(400).json({
+      message: 'Số điện thoại không hợp lệ.',
+      fieldErrors: { phoneNumber: 'Nhập số điện thoại hợp lệ (8–15 chữ số).' },
+    });
+    return;
+  }
   if (await db.collection('users').findOne({ email, deletedAt: null })) {
     res.status(409).json({
       message: 'Email đã được đăng ký, vui lòng sử dụng địa chỉ khác.',
@@ -74,7 +82,10 @@ export async function register(req: Request, res: Response, next: NextFunction):
     });
     return;
   }
-  if (phoneNumber && await db.collection('users').findOne({ phoneNumber, deletedAt: null })) {
+  const usersWithPhone = await db.collection('users')
+    .find({ phoneNumber: { $type: 'string' }, deletedAt: null }, { projection: { phoneNumber: 1 } })
+    .toArray();
+  if (usersWithPhone.some((user) => normalizePhoneNumber(String(user.phoneNumber)) === phoneNumber)) {
     res.status(409).json({
       message: 'Số điện thoại đã được đăng ký, vui lòng sử dụng số khác.',
       fieldErrors: { phoneNumber: 'Số điện thoại này đã được đăng ký.' },
@@ -153,8 +164,13 @@ export async function login(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  const normalizedPhone = normalizePhoneNumber(identifier);
   const user = await getDb().collection('users').findOne({
-    $or: [{ email: identifier }, { phoneNumber: identifier }],
+    $or: [
+      { email: identifier },
+      { phoneNumber: identifier },
+      ...(normalizedPhone ? [{ phoneNumber: normalizedPhone }] : []),
+    ],
     deletedAt: null,
   });
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {

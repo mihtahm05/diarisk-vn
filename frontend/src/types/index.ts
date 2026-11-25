@@ -136,6 +136,9 @@ export interface BatchResultRow {
   probability: number;
   topFactors: string[];
   predictionId: string;
+  rowNo?: number;
+  features?: Record<string, number | string>;
+  shap?: ShapContribution[];
 }
 
 export interface ExcelTemplate {
@@ -179,4 +182,33 @@ export interface BatchSummary {
   totalRows: number;
   validRows: number;
   createdAt: string;
+  status?: string;
+  completedRows?: number;
+  failedRows?: number;
+  predictedAt?: string | null;
 }
+
+export interface BatchDetail extends BatchSummary {
+  rows: BatchResultRow[];
+  errors: BatchRowError[];
+}
+
+export type DashboardMetrics =
+  | {
+    role: "user";
+    stats: { total: number; latestRisk: RiskLevel | null };
+    distribution: Record<RiskLevel, number>;
+    recent: Array<{ predictionId: string; mode: PredictionMode; riskLevel: RiskLevel; createdAt: string }>;
+  }
+  | {
+    role: "doctor";
+    stats: { patients: number; reviewedPatients: number; highRiskPatients: number; totalPredictions: number };
+    distribution: Record<RiskLevel, number>;
+    recent: Array<{ patientId: string; patientCode: string; fullName: string; lastRiskLevel: RiskLevel; updatedAt: string }>;
+  }
+  | {
+    role: "admin";
+    stats: { totalAccounts: number; templates: number; totalLogs: number };
+    roles: Record<Role, number>;
+    recent: Array<{ logId: string; actionType: string; description: string; userName?: string; createdAt: string }>;
+  };

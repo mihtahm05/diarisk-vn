@@ -7,7 +7,17 @@ import { parseObjectId } from '../utils/objectId';
 
 interface PredictionPrivateData {
   features: Record<string, number | string>;
-  shap: Array<{ feature: string; shap: number }>;
+  shap: Array<{ feature: string; shap: number; value?: number | string }>;
+}
+
+interface BatchResultRecord {
+  patientCode?: string;
+  fullName: string;
+  riskLevel: string;
+  probability: number;
+  topFactors: string[];
+  features: Record<string, number | string>;
+  shap: Array<{ feature: string; shap: number; value?: number | string }>;
 }
 
 function ascii(value: string): string {
@@ -36,8 +46,24 @@ async function reportRows(req: Request) {
     const batch = await getDb().collection('prediction_batches').findOne({
       _id: parseObjectId(batchId)!,
       staffId: req.auth!.userId,
+      deletedAt: null,
     });
     if (!batch) throw new Error('Không tìm thấy đợt dự đoán.');
+    if (batch.encryptedRows && ['completed', 'partially_completed', 'failed'].includes(batch.status)) {
+      const results = decryptJson<BatchResultRecord[]>(batch.encryptedRows);
+      return results.map((row) => ({
+        createdAt: new Date(batch.predictedAt || batch.createdAt).toISOString(),
+        patientCode: row.patientCode || '',
+        fullName: row.fullName || '',
+        mode: 'nonclinical',
+        riskLevel: row.riskLevel,
+        probability: Number(row.probability),
+        modelVersion: '',
+        features: JSON.stringify(row.features),
+        factors: row.shap.slice().sort((a, b) => Math.abs(b.shap) - Math.abs(a.shap)).slice(0, 5)
+          .map((item) => item.feature).join(', '),
+      }));
+    }
     filter.batchId = batch._id;
   } else {
     if ((from !== undefined && typeof from !== 'string') || (to !== undefined && typeof to !== 'string')) {
@@ -153,5 +179,108 @@ export async function exportReport(req: Request, res: Response): Promise<void> {
   const buffer = await complete;
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', 'attachment; filename="diarisk_report.pdf"');
+  res.send(buffer);
+}
+
+export async function exportPredictionPdf(req: Request, res: Response): Promise<void> {
+  const predictionId = parseObjectId(req.params.id);
+  if (!predictionId) {
+    res.status(400).json({ message: 'Mã dự đoán không hợp lệ.' });
+    return;
+  }
+  const db = getDb();
+  const prediction = await db.collection('predictions').findOne({
+    _id: predictionId,
+    ownerId: req.auth!.userId,
+    deletedAt: null,
+    patientId: { $ne: null },
+    batchId: null,
+  });
+  const ownPrediction = prediction ?? await db.collection('predictions').findOne({
+    _id: predictionId,
+    ownerId: req.auth!.userId,
+    deletedAt: null,
+    patientId: null,
+    batchId: null,
+  });
+  if (!ownPrediction) {
+    res.status(404).json({ message: 'Không tìm thấy lần dự đoán hoặc bạn không có quyền truy cập.' });
+    return;
+  }
+
+  const privateData = decryptJson<{
+    features: Record<string, number | string>;
+    shap: Array<{ feature: string; shap: number; value?: number | string }>;
+    warning?: string;
+  }>(ownPrediction.encryptedData);
+  const patient = ownPrediction.patientId
+    ? await db.collection('patients').findOne({
+      _id: ownPrediction.patientId,
+      createdById: req.auth!.userId,
+      deletedAt: null,
+    })
+    : null;
+  if (ownPrediction.patientId && !patient) {
+    res.status(404).json({ message: 'Không tìm thấy hồ sơ liên quan đến lần dự đoán.' });
+    return;
+  }
+  const person = patient
+    ? decryptJson<{ fullName: string; birthdate?: string | null; gender?: string | null; phone?: string | null }>(patient.encryptedData)
+    : await db.collection('users').findOne({ _id: req.auth!.userId, deletedAt: null });
+  const personName = patient
+    ? (person as { fullName: string }).fullName
+    : (person as { name?: string } | null)?.name || 'Người dùng';
+  const birthdate = patient
+    ? (person as { birthdate?: string | null }).birthdate
+    : (person as { birthdate?: Date | string | null } | null)?.birthdate;
+  const gender = patient
+    ? (person as { gender?: string | null }).gender
+    : (person as { gender?: string | null } | null)?.gender;
+  const phone = patient
+    ? (person as { phone?: string | null }).phone
+    : (person as { phoneNumber?: string | null } | null)?.phoneNumber;
+
+  const document = new PDFDocument({ size: 'A4', margin: 42 });
+  const chunks: Buffer[] = [];
+  document.on('data', (chunk: Buffer) => chunks.push(chunk));
+  const complete = new Promise<Buffer>((resolve, reject) => {
+    document.on('end', () => resolve(Buffer.concat(chunks)));
+    document.on('error', reject);
+  });
+  const mode = ownPrediction.mode === 'clinical' ? 'Clinical' : 'Non-clinical';
+  document.fontSize(18).text('DiaRisk VN - Prediction result', { align: 'center' });
+  document.moveDown().fontSize(9).text('SCREENING INFORMATION ONLY - NOT A MEDICAL DIAGNOSIS');
+  document.moveDown();
+  document.fontSize(12).text('Patient information', { underline: true });
+  document.fontSize(10)
+    .text(`Name: ${ascii(personName)}`)
+    .text(`Patient code: ${patient?.patientCode ? ascii(patient.patientCode) : 'Personal assessment'}`)
+    .text(`Date of birth: ${birthdate ? ascii(String(birthdate)) : 'Not provided'}`)
+    .text(`Gender: ${gender ? ascii(String(gender)) : 'Not provided'}`)
+    .text(`Phone: ${phone ? ascii(String(phone)) : 'Not provided'}`);
+  document.moveDown().fontSize(12).text('Assessment result', { underline: true });
+  document.fontSize(10)
+    .text(`Assessed at: ${new Date(ownPrediction.createdAt).toISOString()}`)
+    .text(`Mode: ${mode}`)
+    .text(`Estimated probability: ${(Number(ownPrediction.probability) * 100).toFixed(2)}%`)
+    .text(`Risk level: ${ascii(String(ownPrediction.riskLevel))}`);
+  document.moveDown().fontSize(12).text('Input values', { underline: true });
+  document.fontSize(9);
+  for (const [name, value] of Object.entries(privateData.features)) {
+    document.text(`${ascii(name)}: ${ascii(String(value))}`);
+  }
+  document.moveDown().fontSize(12).text('SHAP contributions', { underline: true });
+  document.fontSize(9);
+  for (const item of privateData.shap) {
+    const value = item.value === undefined ? '' : ` (value: ${ascii(String(item.value))})`;
+    document.text(`${ascii(item.feature)}: ${item.shap > 0 ? '+' : ''}${item.shap.toFixed(5)}${value}`);
+  }
+  document.moveDown().fontSize(9)
+    .text(ascii(privateData.warning || 'This result is for reference only and must not replace clinical assessment.'))
+    .text('DiaRisk VN is not a diagnostic tool. Consult a qualified healthcare professional for medical advice.');
+  document.end();
+  const buffer = await complete;
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="diarisk_prediction_${predictionId}.pdf"`);
   res.send(buffer);
 }

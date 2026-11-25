@@ -1,31 +1,95 @@
-import { useRef, useState } from "react";
-import { CheckCircle2, Download, FileSpreadsheet, Loader2, RotateCcw, Upload } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle2, Download, FileSpreadsheet, Loader2, RotateCcw, Search, Trash2, Upload } from "lucide-react";
 import Header from "../../components/Header";
 import { Notice } from "../../components/FormControls";
+import { ConfirmDialog } from "../../components/Modal";
+import { DgPagination } from "../../components/HistoryUI";
 import { RiskBadge } from "../../components/Sidebar";
 import { FEATURE_LABELS } from "../../config/features";
 import { ApiError } from "../../services/api";
 import { mlService } from "../../services/mlService";
-import type { BatchResultRow, BatchValidation } from "../../types";
+import type { BatchDetail, BatchResultRow, BatchSummary, BatchValidation, RiskLevel } from "../../types";
 
 const MAX_BYTES = 10 * 1024 * 1024;
+const BATCH_PAGE_SIZE = 5;
+
+const batchStatusLabels: Record<string, string> = {
+  validated: "Đã kiểm tra",
+  processing: "Đang xử lý",
+  completed: "Hoàn tất",
+  partially_completed: "Hoàn tất một phần",
+  failed: "Thất bại",
+  invalid: "Dữ liệu không hợp lệ",
+};
 
 /** UC-07: tải file .xlsx → báo cáo kiểm tra → xác nhận dự đoán các dòng hợp lệ → bảng kết quả. Việc kiểm tra và dự đoán do backend thực hiện. */
 export default function BatchPredict({ hideHeader = false }: { hideHeader?: boolean }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState<"" | "validate" | "confirm" | "template">("");
+  const [busy, setBusy] = useState<"" | "validate" | "confirm" | "template" | "download">("");
   const [error, setError] = useState("");
   const [report, setReport] = useState<BatchValidation | null>(null);
   const [rows, setRows] = useState<BatchResultRow[] | null>(null);
+  const [executionErrors, setExecutionErrors] = useState<BatchValidation["errors"]>([]);
+  const [batches, setBatches] = useState<BatchSummary[]>([]);
+  const [batchTotal, setBatchTotal] = useState(0);
+  const [batchPage, setBatchPage] = useState(1);
+  const [batchLoading, setBatchLoading] = useState(true);
+  const [toDeleteBatch, setToDeleteBatch] = useState<BatchSummary | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [archive, setArchive] = useState<BatchDetail | null>(null);
+  const [archiveBusy, setArchiveBusy] = useState("");
+  const [query, setQuery] = useState("");
+  const [riskFilter, setRiskFilter] = useState<RiskLevel | "">("");
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  const loadBatches = useCallback(async () => {
+    setBatchLoading(true);
+    try {
+      const result = await mlService.batches({ page: batchPage, pageSize: BATCH_PAGE_SIZE });
+      setBatches(result.items);
+      setBatchTotal(result.total);
+    } catch (cause: unknown) {
+      setError(cause instanceof ApiError ? cause.message : "Không tải được lịch sử các phiên dự đoán.");
+    } finally {
+      setBatchLoading(false);
+    }
+  }, [batchPage]);
+
+  useEffect(() => { void loadBatches(); }, [loadBatches]);
+
+  const activeRows = rows ?? archive?.rows ?? null;
+  const visibleRows = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase();
+    return (activeRows ?? []).filter((row) => {
+      const matchesText = !needle
+        || `${row.patientCode ?? ""} ${row.fullName ?? ""}`.toLocaleLowerCase().includes(needle);
+      return matchesText && (!riskFilter || row.riskLevel === riskFilter);
+    });
+  }, [activeRows, query, riskFilter]);
+  const riskCounts = useMemo(() => ({
+    low: (activeRows ?? []).filter((row) => row.riskLevel === "low").length,
+    medium: (activeRows ?? []).filter((row) => row.riskLevel === "medium").length,
+    high: (activeRows ?? []).filter((row) => row.riskLevel === "high").length,
+  }), [activeRows]);
+  const resultTotal = report?.totalRows ?? archive?.totalRows ?? activeRows?.length ?? 0;
+  const resultFailed = archive
+    ? archive.failedRows ?? 0
+    : (report?.errorRows ?? 0) + executionErrors.length;
+  const riskTotal = activeRows?.length ?? 0;
+  const donutStyle = riskTotal > 0
+    ? { background: `conic-gradient(#16a36a 0 ${riskCounts.low / riskTotal * 100}%, #e8a21b ${riskCounts.low / riskTotal * 100}% ${(riskCounts.low + riskCounts.medium) / riskTotal * 100}%, #dc4c5c ${(riskCounts.low + riskCounts.medium) / riskTotal * 100}% 100%)` }
+    : undefined;
 
   function reset() {
-    setReport(null); setRows(null); setError("");
+    setReport(null); setRows(null); setExecutionErrors([]); setArchive(null); setError("");
+    setQuery(""); setRiskFilter(""); setPage(1);
     if (inputRef.current) inputRef.current.value = "";
   }
 
   async function onFile(file?: File) {
     if (!file) return;
-    setError(""); setReport(null); setRows(null);
+    setError(""); setReport(null); setRows(null); setArchive(null); setExecutionErrors([]);
     if (!/\.xlsx$/i.test(file.name)) { setError("Định dạng tệp không hợp lệ. Vui lòng tải lên tệp Excel (.xlsx)"); return; }
     if (file.size > MAX_BYTES) { setError("Tệp quá lớn (tối đa 10 MB)."); return; }
     setBusy("validate");
@@ -40,10 +104,48 @@ export default function BatchPredict({ hideHeader = false }: { hideHeader?: bool
     if (!report || busy) return;
     setBusy("confirm"); setError("");
     try {
-      setRows((await mlService.confirmBatch(report.batchId)).rows);
+      const result = await mlService.confirmBatch(report.batchId);
+      setRows(result.rows);
+      setExecutionErrors(result.errors);
+      await loadBatches();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Không thể thực hiện dự đoán, vui lòng thử lại sau");
     } finally { setBusy(""); }
+  }
+
+  async function openBatch(batchId: string) {
+    setArchiveBusy(batchId); setError(""); setReport(null); setRows(null);
+    try {
+      setArchive(await mlService.batchDetail(batchId));
+      setQuery(""); setRiskFilter(""); setPage(1);
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "Không tải được chi tiết phiên dự đoán.");
+    } finally { setArchiveBusy(""); }
+  }
+
+  async function downloadResults(batchId: string) {
+    setBusy("download"); setError("");
+    try {
+      await mlService.exportReport({ scope: "batch", format: "xlsx", batchId });
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "Không tải được tệp kết quả.");
+    } finally { setBusy(""); }
+  }
+
+  async function deleteBatch() {
+    if (!toDeleteBatch) return;
+    setDeleteBusy(true);
+    setError("");
+    try {
+      await mlService.removeBatch(toDeleteBatch.batchId);
+      setToDeleteBatch(null);
+      if (batches.length === 1 && batchPage > 1) setBatchPage((current) => current - 1);
+      else await loadBatches();
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : "Không thể xóa phiên dự đoán.");
+    } finally {
+      setDeleteBusy(false);
+    }
   }
 
   async function template() {
@@ -61,7 +163,7 @@ export default function BatchPredict({ hideHeader = false }: { hideHeader?: bool
         {error && <Notice tone="error">{error}</Notice>}
 
         {!rows && (
-          <section className="panel">
+          <section className="panel dr-batch-upload">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-slate-600">Dùng đúng cấu trúc cột của tệp mẫu do hệ thống cung cấp.</p>
               <button className="btn-ghost" onClick={template} disabled={busy === "template"}>
@@ -119,29 +221,140 @@ export default function BatchPredict({ hideHeader = false }: { hideHeader?: bool
           </section>
         )}
 
-        {rows && (
+        {activeRows && (
           <section className="panel">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-[15px] font-bold text-slate-800">Kết quả dự đoán hàng loạt ({rows.length} bệnh nhân)</h2>
-              <button className="btn-ghost" onClick={reset}><RotateCcw className="h-4 w-4" /> Dự đoán đợt mới</button>
+              <h2 className="text-[15px] font-bold text-slate-800">
+                {archive ? `Phiên: ${archive.fileName}` : `Kết quả dự đoán hàng loạt (${activeRows.length} dòng thành công)`}
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {(archive || report) && <button className="btn-ghost" onClick={() => void downloadResults(archive?.batchId ?? report!.batchId)} disabled={busy !== ""}>
+                  {busy === "download" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Tải kết quả (.xlsx)
+                </button>}
+                <button className="btn-ghost" onClick={reset}><RotateCcw className="h-4 w-4" /> Dự đoán đợt mới</button>
+              </div>
             </div>
+
+            <div className="dr-batch-kpis">
+              <article><span>Tổng bản ghi</span><strong>{resultTotal}</strong></article>
+              <article><span>Thành công</span><strong className="is-success">{activeRows.length}</strong></article>
+              <article><span>Thất bại</span><strong className="is-error">{resultFailed}</strong></article>
+            </div>
+
+            <div className="dr-batch-charts">
+              <section className="dr-batch-chart-card">
+                <h3>Phân bố nguy cơ</h3>
+                {riskTotal ? (
+                  <div className="dr-batch-donut-layout">
+                    <div className="dr-batch-donut" style={donutStyle} role="img"
+                      aria-label={`Phân bố nguy cơ trên ${riskTotal} bản ghi thành công`}><span>{riskTotal}<small>thành công</small></span></div>
+                    <ul>
+                      {(["low", "medium", "high"] as const).map((level) => (
+                        <li key={level}><span className={`dr-risk-dot dr-risk-dot--${level}`} />{level === "low" ? "Thấp" : level === "medium" ? "Trung bình" : "Cao"}
+                          <b>{riskCounts[level]} <small>({(riskCounts[level] / riskTotal * 100).toFixed(1)}%)</small></b></li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : <p className="dr-batch-chart-empty">Chưa có bản ghi dự đoán thành công để thống kê.</p>}
+              </section>
+              <section className="dr-batch-chart-card">
+                <h3>Số lượng theo mức nguy cơ</h3>
+                <div className="dr-batch-bars" role="img" aria-label="Biểu đồ số lượng bản ghi theo mức nguy cơ">
+                  {(["low", "medium", "high"] as const).map((level) => (
+                    <div className="dr-batch-bar-row" key={level}>
+                      <span>{level === "low" ? "Thấp" : level === "medium" ? "Trung bình" : "Cao"}</span>
+                      <div><i className={`dr-batch-bar dr-batch-bar--${level}`} style={{ width: `${riskTotal ? Math.max(riskCounts[level] / riskTotal * 100, riskCounts[level] ? 2 : 0) : 0}%` }} /></div>
+                      <b>{riskCounts[level]}</b>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+
+            <div className="dr-batch-results-toolbar">
+              <label className="dr-batch-search">
+                <Search aria-hidden="true" />
+                <span className="sr-only">Tìm theo mã hoặc tên bệnh nhân</span>
+                <input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Tìm mã hoặc tên bệnh nhân" />
+              </label>
+              <label className="dr-batch-risk-filter">Mức nguy cơ
+                <select value={riskFilter} onChange={(event) => { setRiskFilter(event.target.value as RiskLevel | ""); setPage(1); }}>
+                  <option value="">Tất cả</option><option value="low">Thấp</option><option value="medium">Trung bình</option><option value="high">Cao</option>
+                </select>
+              </label>
+            </div>
+
             <div className="overflow-x-auto">
               <table className="w-full min-w-[600px]">
                 <thead className="border-b border-slate-200"><tr><th className="th">Mã bệnh nhân</th><th className="th">Họ tên</th><th className="th">Mức nguy cơ</th><th className="th">Xác suất</th><th className="th">Yếu tố ảnh hưởng chính</th></tr></thead>
                 <tbody className="divide-y divide-slate-100">
-                  {rows.map((r) => (
+                  {visibleRows.slice((page - 1) * pageSize, page * pageSize).map((r) => (
                     <tr key={r.predictionId}>
                       <td className="td">{r.patientCode ?? "—"}</td><td className="td">{r.fullName ?? "—"}</td>
                       <td className="td"><RiskBadge level={r.riskLevel} /></td><td className="td">{(r.probability * 100).toFixed(1)}%</td>
                       <td className="td text-xs">{r.topFactors.map((factor) => FEATURE_LABELS[factor] ?? factor).join(", ")}</td>
                     </tr>
                   ))}
+                  {!visibleRows.length && <tr><td className="td text-slate-500" colSpan={5}>Không có kết quả phù hợp.</td></tr>}
                 </tbody>
               </table>
             </div>
+            <div className="dr-batch-pagination">
+              <span>{visibleRows.length} kết quả phù hợp</span>
+              <div>
+                <button className="btn-ghost" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1}>Trước</button>
+                <span>Trang {page} / {Math.max(1, Math.ceil(visibleRows.length / pageSize))}</span>
+                <button className="btn-ghost" onClick={() => setPage((current) => Math.min(Math.ceil(visibleRows.length / pageSize), current + 1))}
+                  disabled={page >= Math.ceil(visibleRows.length / pageSize)}>Sau</button>
+              </div>
+            </div>
+            {executionErrors.length > 0 && !archive && (
+              <div className="mt-4"><Notice tone="error">{executionErrors.length} dòng không thể dự đoán. Những dòng thất bại được giữ trong lịch sử phiên.</Notice></div>
+            )}
           </section>
         )}
+
+        <section className="panel">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-[15px] font-bold text-slate-800">Lịch sử phiên dự đoán</h2>
+            {archiveBusy && <Loader2 className="h-4 w-4 animate-spin" aria-label="Đang tải phiên" />}
+          </div>
+          {batchLoading ? <p className="text-sm text-slate-500" role="status">Đang tải lịch sử phiên...</p>
+            : !batches.length ? <p className="text-sm text-slate-500">Chưa có phiên dự đoán hàng loạt.</p> : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[620px]">
+                <thead className="border-b border-slate-200"><tr><th className="th">Tệp</th><th className="th">Thời gian</th><th className="th">Thành công / tổng</th><th className="th">Trạng thái</th><th className="th">Thao tác</th></tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {batches.map((batch) => (
+                    <tr key={batch.batchId}>
+                      <td className="td">{batch.fileName}</td>
+                      <td className="td">{new Date(batch.predictedAt || batch.createdAt).toLocaleString("vi-VN")}</td>
+                      <td className="td">{batch.completedRows ?? 0} / {batch.totalRows}</td>
+                      <td className="td">{batch.status ? batchStatusLabels[batch.status] ?? "Không xác định" : "—"}</td>
+                      <td className="td"><div className="flex gap-2">
+                        <button className="btn-ghost" onClick={() => void openBatch(batch.batchId)} disabled={archiveBusy === batch.batchId}>Chi tiết</button>
+                        <button className="btn-ghost" onClick={() => void downloadResults(batch.batchId)} disabled={busy !== ""}><Download className="h-4 w-4" /> Tải</button>
+                        <button className="dh-btn-danger" aria-label={`Xóa phiên ${batch.fileName}`} onClick={() => setToDeleteBatch(batch)}><Trash2 className="h-4 w-4" /> Xóa</button>
+                      </div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {!batchLoading && batchTotal > BATCH_PAGE_SIZE && (
+            <DgPagination page={batchPage} pageSize={BATCH_PAGE_SIZE} total={batchTotal} onPage={setBatchPage} noun="phiên dự đoán" />
+          )}
+        </section>
       </div>
+      {toDeleteBatch && <ConfirmDialog
+        title="Xóa phiên dự đoán hàng loạt"
+        message={`Ẩn phiên “${toDeleteBatch.fileName}” khỏi lịch sử dự đoán? Hồ sơ bệnh nhân không bị xóa.`}
+        confirmLabel="Xóa phiên"
+        busy={deleteBusy}
+        onConfirm={deleteBatch}
+        onCancel={() => setToDeleteBatch(null)}
+      />}
     </div>
   );
 }

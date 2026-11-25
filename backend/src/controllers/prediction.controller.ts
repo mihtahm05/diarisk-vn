@@ -503,6 +503,41 @@ export async function removePrediction(req: Request, res: Response): Promise<voi
   res.status(204).end();
 }
 
+export async function removePredictions(req: Request, res: Response): Promise<void> {
+  const ids = req.body?.predictionIds;
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100 || ids.some((id: unknown) => typeof id !== 'string')) {
+    res.status(400).json({ message: 'Chọn từ 1 đến 100 bản ghi đánh giá hợp lệ.' });
+    return;
+  }
+  const uniqueIds = [...new Set(ids as string[])];
+  const objectIds = uniqueIds.map((id) => parseObjectId(id));
+  if (objectIds.some((id) => !id)) {
+    res.status(400).json({ message: 'Một hoặc nhiều mã bản ghi không hợp lệ.' });
+    return;
+  }
+  const validObjectIds = objectIds.filter((id): id is ObjectId => id !== null);
+  const filter = {
+    _id: { $in: validObjectIds },
+    ownerId: req.auth!.userId,
+    patientId: { $ne: null },
+    deletedAt: null,
+  };
+  const db = getDb();
+  const existingCount = await db.collection('predictions').countDocuments(filter);
+  if (existingCount !== uniqueIds.length) {
+    res.status(404).json({ message: 'Một hoặc nhiều bản ghi không tồn tại hoặc bạn không có quyền xóa.' });
+    return;
+  }
+  const now = new Date();
+  const result = await db.collection('predictions').updateMany(filter, { $set: { deletedAt: now } });
+  if (result.modifiedCount !== uniqueIds.length) {
+    res.status(409).json({ message: 'Danh sách bản ghi đã thay đổi. Vui lòng tải lại lịch sử và thử lại.' });
+    return;
+  }
+  await recordActivity(req, 'DELETE_PREDICTIONS', 'predictions', uniqueIds.join(','), `Xóa mềm ${uniqueIds.length} bản ghi đánh giá bệnh nhân`);
+  res.json({ deletedCount: result.modifiedCount });
+}
+
 export async function patientPredictionHistory(req: Request, res: Response): Promise<void> {
   const patientId = parseObjectId(req.params.id);
   if (!patientId) {
