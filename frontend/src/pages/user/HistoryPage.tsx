@@ -1,12 +1,11 @@
-import { History, KeyRound, Stethoscope, UserRound } from "lucide-react";
+import { History, Stethoscope, UserRound } from "lucide-react";
 import DashboardLayout, { type NavSection } from "../../components/DashboardLayout";
 
 export const USER_NAV: NavSection[] = [
   {
     title: "Hồ sơ cá nhân",
     items: [
-      { to: "/user/profile", label: "Quản lý thông tin cá nhân", icon: UserRound },
-      { to: "/user/password", label: "Quản lý mật khẩu", icon: KeyRound },
+      { to: "/user/profile", label: "Thông tin cá nhân", icon: UserRound },
     ],
   },
   {

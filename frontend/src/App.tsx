@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
-import { OwnHistoryPage, PasswordPage, ProfilePage } from "./components/AccountPages";
+import { OwnHistoryPage, ProfilePage } from "./components/AccountPages";
 import { useAuth } from "./context/AuthContext";
 import { ROLE_HOME } from "./services/authService";
 import LoginPage from "./pages/auth/LoginPage";
@@ -36,7 +36,7 @@ export default function App() {
           <Route path="predict" element={<HealthPredict mode="nonclinical" target="self" />} />
           <Route path="history" element={<OwnHistoryPage />} />
           <Route path="profile" element={<ProfilePage />} />
-          <Route path="password" element={<PasswordPage />} />
+          <Route path="password" element={<Navigate to="../profile" replace />} />
         </Route>
       </Route>
 
@@ -50,7 +50,7 @@ export default function App() {
           <Route path="self" element={<HealthPredict key="self" mode="nonclinical" target="self" />} />
           <Route path="history" element={<OwnHistoryPage />} />
           <Route path="profile" element={<ProfilePage />} />
-          <Route path="password" element={<PasswordPage />} />
+          <Route path="password" element={<Navigate to="../profile" replace />} />
         </Route>
       </Route>
 
@@ -62,7 +62,7 @@ export default function App() {
           <Route path="templates" element={<TemplateManagement />} />
           <Route path="logs" element={<ActivityLogs />} />
           <Route path="profile" element={<ProfilePage />} />
-          <Route path="password" element={<PasswordPage />} />
+          <Route path="password" element={<Navigate to="../profile" replace />} />
         </Route>
       </Route>
 

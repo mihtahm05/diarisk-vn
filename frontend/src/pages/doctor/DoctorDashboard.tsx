@@ -1,4 +1,4 @@
-import { ClipboardList, FileDown, History, KeyRound, Stethoscope, UserRound, Users } from "lucide-react";
+import { ClipboardList, FileDown, History, Stethoscope, UserRound, Users } from "lucide-react";
 import DashboardLayout, { type NavSection } from "../../components/DashboardLayout";
 
 const DOCTOR_NAV: NavSection[] = [
@@ -6,7 +6,6 @@ const DOCTOR_NAV: NavSection[] = [
     title: "Hồ sơ cá nhân",
     items: [
       { to: "/doctor/profile", label: "Thông tin cá nhân", icon: UserRound },
-      { to: "/doctor/password", label: "Đổi mật khẩu", icon: KeyRound },
     ],
   },
   {

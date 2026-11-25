@@ -226,12 +226,13 @@ export function ProfilePage() {
             </div>
           </div>
         </form>
+        <PasswordCard />
       </div>
     </div>
   );
 }
 
-export function PasswordPage() {
+function PasswordCard() {
   const { signOut } = useAuth();
   const navigate = useNavigate();
   const [currentPassword, setCurrentPassword] = useState("");
@@ -255,44 +256,51 @@ export function PasswordPage() {
     setBusy(true);
     try {
       await authService.changePassword({ currentPassword, newPassword, confirmPassword });
-      await signOut();
-      navigate("/login", { replace: true });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setMessage({ tone: "success", text: "Đổi mật khẩu thành công. Phiên đăng nhập hiện tại sẽ kết thúc." });
+      window.setTimeout(() => {
+        void signOut().finally(() => navigate("/login", { replace: true }));
+      }, 1200);
     } catch (error) {
-      setMessage({ tone: "error", text: error instanceof ApiError ? error.message : "Không thể đổi mật khẩu." });
+      if (error instanceof ApiError) {
+        setMessage({ tone: "error", text: error.fieldErrors.currentPassword || error.fieldErrors.confirmPassword || error.fieldErrors.newPassword || error.message });
+      } else {
+        setMessage({ tone: "error", text: "Không thể đổi mật khẩu." });
+      }
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div>
-      <Header title="Đổi mật khẩu" subtitle="Mật khẩu mới được mã hóa trước khi lưu. Sau khi đổi, bạn sẽ được đăng xuất để đăng nhập lại." />
-      <div className="dg-sections dg-wrap">
-        <MessageBox message={message} />
+    <section className="dg-card dg-security-card" aria-labelledby="security-title">
+      <div className="dg-security-heading">
         <div>
-          <form onSubmit={submit}>
-            <div className="dg-card">
-              <Row label="Mật khẩu hiện tại" htmlFor="current-password">
-                <PasswordInput id="current-password" autoComplete="current-password" value={currentPassword} onChange={setCurrentPassword} />
-              </Row>
-              <Row label="Mật khẩu mới" htmlFor="new-password">
-                <PasswordInput id="new-password" autoComplete="new-password" value={newPassword} onChange={setNewPassword} minLength={8} />
-              </Row>
-              <Row label="Xác nhận mật khẩu mới" htmlFor="confirm-password" error={mismatch ? "Mật khẩu xác nhận chưa khớp." : undefined}>
-                <PasswordInput id="confirm-password" autoComplete="new-password" value={confirmPassword} onChange={setConfirmPassword}
-                  minLength={8} invalid={mismatch} />
-              </Row>
-              <div className="dg-card-foot">
-                <span className="dg-foot-note" />
-                <button className="dg-submit" disabled={busy}>
-                  {busy && <Loader2 className="dg-spin" aria-hidden="true" />} Cập nhật mật khẩu
-                </button>
-              </div>
-            </div>
-          </form>
-
+          <h2 id="security-title">Bảo mật tài khoản</h2>
+          <p>Cập nhật mật khẩu đăng nhập của bạn</p>
         </div>
       </div>
-    </div>
+      <MessageBox message={message} />
+      <form onSubmit={submit}>
+        <Row label="Mật khẩu hiện tại" htmlFor="current-password">
+          <PasswordInput id="current-password" autoComplete="current-password" value={currentPassword} onChange={setCurrentPassword} />
+        </Row>
+        <Row label="Mật khẩu mới" hint="Sử dụng ít nhất 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt" htmlFor="new-password">
+          <PasswordInput id="new-password" autoComplete="new-password" value={newPassword} onChange={setNewPassword} minLength={8} />
+        </Row>
+        <Row label="Xác nhận mật khẩu mới" htmlFor="confirm-password" error={mismatch ? "Mật khẩu xác nhận chưa khớp." : undefined}>
+          <PasswordInput id="confirm-password" autoComplete="new-password" value={confirmPassword} onChange={setConfirmPassword}
+            minLength={8} invalid={mismatch} />
+        </Row>
+        <div className="dg-card-foot">
+          <span className="dg-foot-note">Mật khẩu của bạn được mã hóa khi lưu.</span>
+          <button className="dg-submit" type="submit" disabled={busy}>
+            {busy && <Loader2 className="dg-spin" aria-hidden="true" />} Cập nhật mật khẩu
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }
