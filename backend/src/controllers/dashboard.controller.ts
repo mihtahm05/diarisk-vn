@@ -45,7 +45,18 @@ export async function dashboardMetrics(req: Request, res: Response): Promise<voi
       patientId: { $ne: null },
       deletedAt: null,
     };
-    const [patientCount, summaries] = await Promise.all([
+    const dayMilliseconds = 24 * 60 * 60 * 1000;
+    const vietnamOffsetMilliseconds = 7 * 60 * 60 * 1000;
+    const nowInVietnam = new Date(Date.now() + vietnamOffsetMilliseconds);
+    const firstTrendDayUtc = Date.UTC(
+      nowInVietnam.getUTCFullYear(),
+      nowInVietnam.getUTCMonth(),
+      nowInVietnam.getUTCDate() - 6,
+    );
+    const trendStartDate = new Date(firstTrendDayUtc - vietnamOffsetMilliseconds);
+    const trendDates = Array.from({ length: 7 }, (_, index) =>
+      new Date(firstTrendDayUtc + index * dayMilliseconds).toISOString().slice(0, 10));
+    const [patientCount, summaries, trendRows] = await Promise.all([
       db.collection('patients').countDocuments(patientFilter),
       db.collection('predictions').aggregate<{
         _id: null;
@@ -81,8 +92,40 @@ export async function dashboardMetrics(req: Request, res: Response): Promise<voi
           },
         },
       ]).toArray(),
+      db.collection('predictions').aggregate<{
+        _id: string;
+        low: number;
+        medium: number;
+        high: number;
+      }>([
+        { $match: { ...predictionFilter, createdAt: { $gte: trendStartDate } } },
+        {
+          $group: {
+            _id: {
+              $dateToString: {
+                format: '%Y-%m-%d',
+                date: '$createdAt',
+                timezone: 'Asia/Ho_Chi_Minh',
+              },
+            },
+            low: { $sum: { $cond: [{ $eq: ['$riskLevel', 'low'] }, 1, 0] } },
+            medium: { $sum: { $cond: [{ $eq: ['$riskLevel', 'medium'] }, 1, 0] } },
+            high: { $sum: { $cond: [{ $eq: ['$riskLevel', 'high'] }, 1, 0] } },
+          },
+        },
+      ]).toArray(),
     ]);
     const summary = summaries[0];
+    const trendByDate = new Map(trendRows.map((row) => [row._id, row]));
+    const trend = trendDates.map((date) => {
+      const counts = trendByDate.get(date);
+      return {
+        date,
+        low: counts?.low ?? 0,
+        medium: counts?.medium ?? 0,
+        high: counts?.high ?? 0,
+      };
+    });
     const recentGroups = await db.collection('predictions').aggregate<{
       _id: ObjectId;
       latestRisk: string;
@@ -123,6 +166,7 @@ export async function dashboardMetrics(req: Request, res: Response): Promise<voi
         totalPredictions: summary?.total ?? 0,
       },
       distribution: { low: summary?.low ?? 0, medium: summary?.medium ?? 0, high: summary?.high ?? 0 },
+      trend,
       recent,
     });
     return;

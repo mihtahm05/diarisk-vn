@@ -9,6 +9,17 @@ import type { DashboardMetrics, RiskLevel } from "../../types";
 import "../../dashboard.css";
 
 const riskLabels: Record<RiskLevel, string> = { low: "Thấp", medium: "Trung bình", high: "Cao" };
+const riskLevels = [
+  { key: "low", label: riskLabels.low, color: "#059669" },
+  { key: "medium", label: riskLabels.medium, color: "#d97706" },
+  { key: "high", label: riskLabels.high, color: "#dc2626" },
+] as const;
+const weekdayLabels = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+
+function getWeekdayLabel(date: string): string {
+  const [year, month, day] = date.split("-").map(Number);
+  return weekdayLabels[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+}
 
 export default function RoleOverview() {
   const { user } = useAuth();
@@ -57,6 +68,23 @@ export default function RoleOverview() {
     ? metrics.distribution
     : null;
   const totalRisk = distribution ? distribution.low + distribution.medium + distribution.high : 0;
+  const adminRoleSegments = metrics?.role === "admin" ? [
+    { key: "user", label: "Người dùng", count: metrics.roles.user, color: "#2563eb" },
+    { key: "doctor", label: "Cán bộ y tế", count: metrics.roles.doctor, color: "#0f766e" },
+    { key: "admin", label: "Quản trị viên", count: metrics.roles.admin, color: "#94a3b8" },
+  ] : [];
+  const adminTotalAccounts = metrics?.role === "admin" ? metrics.stats.totalAccounts : 0;
+  let accountOffset = 0;
+  const adminDonutStops = adminTotalAccounts > 0
+    ? adminRoleSegments.map(({ count, color }) => {
+      const start = accountOffset;
+      accountOffset += (count / adminTotalAccounts) * 360;
+      return `${color} ${start}deg ${accountOffset}deg`;
+    }).join(", ")
+    : "";
+  const maxTrendCount = metrics?.role === "doctor"
+    ? Math.max(...metrics.trend.flatMap((day) => riskLevels.map(({ key }) => day[key])))
+    : 0;
 
   return (
     <div>
@@ -72,27 +100,71 @@ export default function RoleOverview() {
       </section>
       <div className="dr-overview-layout">
         <section className="dr-overview-panel dr-overview-chart">
-          <div className="dr-panel-heading"><div><span>{metrics?.role === "admin" ? "PHÂN BỐ TÀI KHOẢN" : "PHÂN BỐ KẾT QUẢ"}</span><h2>{metrics?.role === "admin" ? "Vai trò trong hệ thống" : "Mức nguy cơ gần đây"}</h2></div></div>
+          <div className="dr-panel-heading"><div><span>{metrics?.role === "admin" ? "PHÂN BỐ TÀI KHOẢN" : "PHÂN BỐ KẾT QUẢ"}</span><h2>{metrics?.role === "admin" ? "Vai trò trong hệ thống" : metrics?.role === "doctor" ? "Mức nguy cơ theo ngày" : "Mức nguy cơ gần đây"}</h2></div></div>
           {metrics?.role === "admin" ? (
-            <div className="dr-role-chart">
-              {([
-                ["user", "Người dùng"],
-                ["doctor", "Cán bộ y tế"],
-                ["admin", "Quản trị viên"],
-              ] as const).map(([role, label]) => {
-                const count = metrics.roles[role];
-                const total = metrics.stats.totalAccounts;
-                const percent = total ? (count / total) * 100 : 0;
-                return <div className="dr-role-row" key={role}><b>{label}</b><span><i style={{ width: `${percent}%` }} /></span><strong>{count}</strong></div>;
-              })}
-            </div>
+            metrics.stats.totalAccounts > 0 ? (
+              <div className="dr-role-donut-layout">
+                <div
+                  className="dr-role-donut"
+                  role="img"
+                  aria-label={`Phân bố ${metrics.stats.totalAccounts} tài khoản theo vai trò`}
+                  style={{ background: `conic-gradient(${adminDonutStops})` }}
+                >
+                  <div className="dr-role-donut-center">
+                    <span>Tổng tài khoản</span>
+                    <strong>{metrics.stats.totalAccounts.toLocaleString("vi-VN")}</strong>
+                  </div>
+                </div>
+                <div className="dr-role-legend">
+                  {adminRoleSegments.map(({ key, label, count, color }) => (
+                    <div key={key}>
+                      <i style={{ background: color }} />
+                      <span>{label}</span>
+                      <strong>{count.toLocaleString("vi-VN")}</strong>
+                      <small>{((count / metrics.stats.totalAccounts) * 100).toFixed(1)}%</small>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="dr-chart-empty"><Users aria-hidden="true" /><p>Chưa có tài khoản để vẽ biểu đồ.</p></div>
+            )
+          ) : metrics?.role === "doctor" ? (
+            maxTrendCount > 0 ? (
+              <div className="dr-risk-weekly-layout">
+                <div className="dr-risk-weekly-legend" aria-label="Chú giải mức nguy cơ">
+                  {riskLevels.map(({ key, label, color }) => (
+                    <span key={key}><i style={{ background: color }} />{label}</span>
+                  ))}
+                </div>
+                <div className="dr-risk-weekly">
+                  {metrics.trend.map((day) => (
+                    <div
+                      className="dr-risk-day"
+                      key={day.date}
+                      role="group"
+                      aria-label={`${day.date}: thấp ${day.low}, trung bình ${day.medium}, cao ${day.high}`}
+                    >
+                      <div className="dr-risk-day-bars">
+                        {riskLevels.map(({ key, label, color }) => (
+                          <i
+                            key={key}
+                            title={`${label}: ${day[key]}`}
+                            style={{ height: `${(day[key] / maxTrendCount) * 100}%`, background: color }}
+                          />
+                        ))}
+                      </div>
+                      <span title={day.date}>{getWeekdayLabel(day.date)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="dr-chart-empty"><Activity aria-hidden="true" /><p>Chưa có đánh giá trong 7 ngày gần nhất.</p></div>
+            )
           ) : totalRisk > 0 && distribution ? (
             <div className="dr-risk-bars" aria-label="Phân bố mức nguy cơ">
-              {([
-                ["low", "#059669"],
-                ["medium", "#d97706"],
-                ["high", "#dc2626"],
-              ] as const).map(([key, color]) => (
+              {riskLevels.map(({ key, color }) => (
                 <div className="dr-risk-bar" key={key}>
                   <span>{riskLabels[key]}</span>
                   <b style={{ width: `${(distribution[key] / totalRisk) * 100}%`, background: color }} />
