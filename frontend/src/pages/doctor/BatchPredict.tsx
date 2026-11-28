@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, Download, FileSpreadsheet, Loader2, RotateCcw, Search, Trash2, Upload } from "lucide-react";
+import { CheckCircle2, Download, Eye, FileSpreadsheet, Loader2, RotateCcw, Search, Trash2, Upload } from "lucide-react";
 import Header from "../../components/Header";
 import { Notice } from "../../components/FormControls";
-import { ConfirmDialog } from "../../components/Modal";
+import { ConfirmDialog, Modal } from "../../components/Modal";
 import { DgPagination } from "../../components/HistoryUI";
+import { PredictionResultView } from "../../components/PredictionPresentation";
 import { RiskBadge } from "../../components/Sidebar";
 import { FEATURE_LABELS } from "../../config/features";
 import { ApiError } from "../../services/api";
@@ -37,6 +38,7 @@ export default function BatchPredict({ hideHeader = false }: { hideHeader?: bool
   const [toDeleteBatch, setToDeleteBatch] = useState<BatchSummary | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [archive, setArchive] = useState<BatchDetail | null>(null);
+  const [selectedResult, setSelectedResult] = useState<BatchResultRow | null>(null);
   const [archiveBusy, setArchiveBusy] = useState("");
   const [query, setQuery] = useState("");
   const [riskFilter, setRiskFilter] = useState<RiskLevel | "">("");
@@ -284,21 +286,64 @@ export default function BatchPredict({ hideHeader = false }: { hideHeader?: bool
               </label>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[600px]">
-                <thead className="border-b border-slate-200"><tr><th className="th">Mã bệnh nhân</th><th className="th">Họ tên</th><th className="th">Mức nguy cơ</th><th className="th">Xác suất</th><th className="th">Yếu tố ảnh hưởng chính</th></tr></thead>
-                <tbody className="divide-y divide-slate-100">
-                  {visibleRows.slice((page - 1) * pageSize, page * pageSize).map((r) => (
-                    <tr key={r.predictionId}>
-                      <td className="td">{r.patientCode ?? "—"}</td><td className="td">{r.fullName ?? "—"}</td>
-                      <td className="td"><RiskBadge level={r.riskLevel} /></td><td className="td">{(r.probability * 100).toFixed(1)}%</td>
-                      <td className="td text-xs">{r.topFactors.map((factor) => FEATURE_LABELS[factor] ?? factor).join(", ")}</td>
-                    </tr>
-                  ))}
-                  {!visibleRows.length && <tr><td className="td text-slate-500" colSpan={5}>Không có kết quả phù hợp.</td></tr>}
-                </tbody>
-              </table>
-            </div>
+            {visibleRows.length ? (
+              <div className="dr-batch-result-grid">
+                {visibleRows.slice((page - 1) * pageSize, page * pageSize).map((row) => {
+                  const probability = Math.min(100, Math.max(0, row.probability * 100));
+                  const riskColor = row.riskLevel === "low" ? "#059669" : row.riskLevel === "high" ? "#dc2626" : "#d97706";
+                  const riskLabel = row.riskLevel === "low" ? "Thấp" : row.riskLevel === "high" ? "Cao" : "Trung bình";
+                  const initials = (row.fullName || "BN").trim().split(/\s+/).slice(-2).map((part) => part[0]).join("").toUpperCase();
+                  return (
+                    <article key={row.predictionId} className={`dr-batch-result-card dr-batch-result-card--${row.riskLevel}`}>
+                      <header className="dr-batch-result-header">
+                        <span className="dr-batch-result-avatar" aria-hidden="true">{initials}</span>
+                        <div className="dr-batch-result-person">
+                          <h3 title={row.fullName || "Chưa có họ tên"}>{row.fullName || "Chưa có họ tên"}</h3>
+                          <span>{row.patientCode || "Chưa có mã bệnh nhân"}</span>
+                        </div>
+                        <RiskBadge level={row.riskLevel} />
+                      </header>
+                      <div className="dr-batch-result-content">
+                        <div className="dr-batch-result-score">
+                          <div
+                            className="dr-batch-result-ring"
+                            role="img"
+                            aria-label={`Xác suất mô hình ước tính ${probability.toFixed(1)} phần trăm`}
+                            style={{ background: `conic-gradient(${riskColor} ${probability}%, #e8edf4 ${probability}% 100%)` }}
+                          >
+                            <span><strong>{probability.toFixed(1)}%</strong><small>Xác suất</small></span>
+                          </div>
+                          <div>
+                            <span className="dr-batch-result-label">Kết quả sàng lọc</span>
+                            <strong className="dr-batch-result-risk">Nguy cơ {riskLabel.toLowerCase()}</strong>
+                            <span className="dr-batch-result-caption">Ước tính từ mô hình</span>
+                          </div>
+                        </div>
+                        <div className="dr-batch-result-factors">
+                          <span className="dr-batch-result-label">Yếu tố ảnh hưởng chính</span>
+                          {row.topFactors.length ? (
+                            <ul>
+                              {row.topFactors.slice(0, 3).map((factor, index) => (
+                                <li key={factor}>
+                                  <span>{String(index + 1).padStart(2, "0")}</span>
+                                  {FEATURE_LABELS[factor] ?? factor}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : <p>Chưa có dữ liệu yếu tố ảnh hưởng.</p>}
+                        </div>
+                      </div>
+                      <footer className="dr-batch-result-footer">
+                        <span>Kết quả hàng loạt</span>
+                        <button type="button" onClick={() => setSelectedResult(row)}>
+                          <Eye aria-hidden="true" /> Xem phân tích
+                        </button>
+                      </footer>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : <p className="dr-batch-chart-empty">Không có kết quả phù hợp.</p>}
             <div className="dr-batch-pagination">
               <span>{visibleRows.length} kết quả phù hợp</span>
               <div>
@@ -355,6 +400,22 @@ export default function BatchPredict({ hideHeader = false }: { hideHeader?: bool
         onConfirm={deleteBatch}
         onCancel={() => setToDeleteBatch(null)}
       />}
+      {selectedResult && <Modal title="Phân tích kết quả dự đoán" wide onClose={() => setSelectedResult(null)}>
+        <PredictionResultView
+          result={{
+            predictionId: selectedResult.predictionId,
+            mode: "nonclinical",
+            riskLevel: selectedResult.riskLevel,
+            probability: selectedResult.probability,
+            createdAt: archive?.predictedAt || archive?.createdAt || new Date().toISOString(),
+            patientName: selectedResult.fullName,
+            inputs: selectedResult.features,
+            shap: selectedResult.shap ?? [],
+          }}
+          showActions={false}
+          eyebrow="Kết quả dự đoán hàng loạt · Phi lâm sàng"
+        />
+      </Modal>}
     </div>
   );
 }

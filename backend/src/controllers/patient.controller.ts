@@ -27,9 +27,9 @@ function phoneSearchKey(value: string): string {
 const patientSchema = z.object({
   fullName: z.string().trim().min(2).max(120),
   patientCode: z.string().trim().min(2).max(40).optional(),
-  birthdate: z.string().optional().or(z.literal('')),
-  gender: z.enum(['male', 'female']).optional().or(z.literal('')),
-  phone: z.string().trim().max(20).optional().or(z.literal('')),
+  birthdate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày sinh phải theo định dạng năm-tháng-ngày.'),
+  gender: z.enum(['male', 'female']),
+  phone: z.string().regex(/^0\d{9}$/, 'Số điện thoại phải gồm 10 chữ số và bắt đầu bằng số 0.'),
   address: z.string().trim().max(500).optional().or(z.literal('')),
 });
 
@@ -47,7 +47,7 @@ export async function createPatientRecord(
   createdById: ObjectId,
   data: PatientPrivateData,
   requestedCode?: string,
-): Promise<{ patientId: string; patientCode: string }> {
+): Promise<{ patientId: string; patientCode: string; createdAt: string }> {
   const patientCode = requestedCode || `BN-${new ObjectId().toHexString().slice(-8).toUpperCase()}`;
   const now = new Date();
   const result = await getDb().collection('patients').insertOne({
@@ -58,7 +58,15 @@ export async function createPatientRecord(
     updatedAt: now,
     deletedAt: null,
   });
-  return { patientId: String(result.insertedId), patientCode };
+  return { patientId: String(result.insertedId), patientCode, createdAt: now.toISOString() };
+}
+
+export async function generatePatientCode(req: Request, res: Response): Promise<void> {
+  let patientCode: string;
+  do {
+    patientCode = `BN-${new ObjectId().toHexString().slice(-8).toUpperCase()}`;
+  } while (await getDb().collection('patients').findOne({ createdById: req.auth!.userId, patientCode }));
+  res.json({ patientCode });
 }
 
 export async function createPatient(req: Request, res: Response): Promise<void> {
@@ -70,8 +78,19 @@ export async function createPatient(req: Request, res: Response): Promise<void> 
     });
     return;
   }
-  if (parsed.data.birthdate && Number.isNaN(Date.parse(parsed.data.birthdate))) {
-    res.status(400).json({ message: 'Ngày sinh không hợp lệ.', fieldErrors: { birthdate: 'Ngày sinh không hợp lệ.' } });
+  const birthdate = new Date(`${parsed.data.birthdate}T00:00:00.000Z`);
+  const today = new Date();
+  const age = today.getUTCFullYear() - birthdate.getUTCFullYear()
+    - (today.getUTCMonth() < birthdate.getUTCMonth()
+      || (today.getUTCMonth() === birthdate.getUTCMonth() && today.getUTCDate() < birthdate.getUTCDate()) ? 1 : 0);
+  if (
+    Number.isNaN(birthdate.getTime())
+    || birthdate.toISOString().slice(0, 10) !== parsed.data.birthdate
+    || parsed.data.birthdate > today.toISOString().slice(0, 10)
+    || age < 0
+    || age > 120
+  ) {
+    res.status(400).json({ message: 'Ngày sinh phải hợp lệ và tuổi phải nằm trong khoảng 0–120.', fieldErrors: { birthdate: 'Ngày sinh phải hợp lệ và tuổi phải nằm trong khoảng 0–120.' } });
     return;
   }
 

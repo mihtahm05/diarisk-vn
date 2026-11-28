@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { Download, Eye, Loader2, Search, Trash2 } from "lucide-react";
 import Header from "../../components/Header";
 import { ConfirmDialog, Modal } from "../../components/Modal";
-import PredictionResultCard, { RiskBadge } from "../../components/Sidebar";
+import { PredictionResultView } from "../../components/PredictionPresentation";
+import { RiskBadge } from "../../components/Sidebar";
 import { DgPagination, MessageBox, ModeBadge, Probability, localDateKey, splitDateTime } from "../../components/HistoryUI";
 import { FEATURE_LABELS } from "../../config/features";
 import { ApiError } from "../../services/api";
@@ -338,7 +339,11 @@ export default function PatientList() {
       </section>
 
       {detail && <Modal title="Chi tiết lần dự đoán" wide onClose={() => setDetail(null)}>
-        <PredictionResultCard result={detail} />
+        <PredictionResultView
+          result={detail}
+          showActions={false}
+          eyebrow={`Kết quả sàng lọc bệnh nhân · ${detail.mode === "clinical" ? "Lâm sàng" : "Phi lâm sàng"}`}
+        />
         <button type="button" className="btn-ghost mt-4" onClick={() => void downloadDetail()} disabled={pdfBusy}>
           {pdfBusy ? <Loader2 className="dg-spin" aria-hidden="true" /> : <Download aria-hidden="true" />} Tải kết quả PDF
         </button>

@@ -102,6 +102,17 @@ export const mlService = {
     });
   },
 
+  generatePatientCode(): Promise<{ patientCode: string }> {
+    return api.get<{ patientCode: string }>("/patients/code");
+  },
+
+  createPatient(
+    patient: Required<Pick<PatientInfo, "fullName" | "birthdate" | "gender" | "phone">>
+      & Pick<PatientInfo, "patientCode">,
+  ): Promise<Patient> {
+    return api.post<Patient>("/patients", patient);
+  },
+
   patientPredictions(patientId: string): Promise<PredictionListItem[]> {
     return api.get<PredictionListItem[]>(`/patients/${encodeURIComponent(patientId)}/predictions`);
   },

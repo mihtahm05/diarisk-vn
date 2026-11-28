@@ -494,7 +494,11 @@ export async function removePrediction(req: Request, res: Response): Promise<voi
     ownerId: req.auth!.userId,
     deletedAt: null,
   });
-  if (!prediction || !prediction.patientId || (req.auth!.role !== 'doctor' && req.auth!.role !== 'admin')) {
+  const canDeleteSelfAssessment = Boolean(prediction)
+    && !prediction!.patientId
+    && (req.auth!.role === 'user' || req.auth!.role === 'doctor');
+  const canDeletePatientAssessment = Boolean(prediction?.patientId) && req.auth!.role === 'doctor';
+  if (!prediction || (!canDeleteSelfAssessment && !canDeletePatientAssessment)) {
     res.status(404).json({ message: 'Không tìm thấy lần dự đoán hoặc bạn không có quyền xóa.' });
     return;
   }

@@ -10,3 +10,5 @@ ml-service/model/brfss2015_clean.csv
 
 .history/
 *.bak
+ml-service/.venv311/
+ml-service/.venv/

@@ -10,7 +10,7 @@ import {
   patientPredictionHistory,
 } from '../controllers/prediction.controller';
 import { dashboardMetrics } from '../controllers/dashboard.controller';
-import { createPatient, listPatients } from '../controllers/patient.controller';
+import { createPatient, generatePatientCode, listPatients } from '../controllers/patient.controller';
 import {
   upload,
   validateBatch,
@@ -51,10 +51,11 @@ router.post('/predictions', auth, roles('user', 'doctor'), asyncHandler(createPr
 router.get('/predictions', auth, roles('user', 'doctor'), asyncHandler(predictionHistory));
 router.get('/predictions/:id/pdf', auth, roles('user', 'doctor'), asyncHandler(exportPredictionPdf));
 router.get('/predictions/:id', auth, roles('user', 'doctor'), asyncHandler(predictionDetail));
-router.delete('/predictions/:id', auth, roles('doctor'), asyncHandler(removePrediction));
+router.delete('/predictions/:id', auth, roles('user', 'doctor'), asyncHandler(removePrediction));
 router.post('/predictions/bulk-delete', auth, roles('doctor'), asyncHandler(removePredictions));
 
 router.get('/patients', auth, roles('doctor'), asyncHandler(listPatients));
+router.get('/patients/code', auth, roles('doctor'), asyncHandler(generatePatientCode));
 router.post('/patients', auth, roles('doctor'), asyncHandler(createPatient));
 router.get('/patients/:id/predictions', auth, roles('doctor'), asyncHandler(patientPredictionHistory));
 

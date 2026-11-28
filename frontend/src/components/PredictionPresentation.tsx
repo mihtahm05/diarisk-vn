@@ -15,6 +15,8 @@ const riskColors = {
   high: "#dc2626",
 } as const;
 
+const modelDisclaimer = "Mô hình được huấn luyện trên dữ liệu BRFSS tự khai báo, chưa được kiểm định lâm sàng tại Việt Nam. Kết quả chỉ mang tính tham khảo, không phải chẩn đoán thay thế cho bác sĩ.";
+
 export function PredictionLoadingView({ mode }: { mode: PredictionMode }) {
   const modeLabel = mode === "clinical" ? "lâm sàng" : "phi lâm sàng";
 
@@ -48,12 +50,22 @@ export function PredictionLoadingView({ mode }: { mode: PredictionMode }) {
   );
 }
 
-export function PredictionResultView({ result, onReset, onDownload, downloadBusy, downloadError }: {
+export function PredictionResultView({
+  result,
+  onReset,
+  onDownload,
+  downloadBusy = false,
+  downloadError,
+  showActions = true,
+  eyebrow,
+}: {
   result: PredictionResult;
-  onReset: () => void;
-  onDownload: () => void;
-  downloadBusy: boolean;
+  onReset?: () => void;
+  onDownload?: () => void;
+  downloadBusy?: boolean;
   downloadError?: string;
+  showActions?: boolean;
+  eyebrow?: string;
 }) {
   const probability = Math.min(100, Math.max(0, result.probability * 100));
   const factors = [...result.shap]
@@ -66,33 +78,38 @@ export function PredictionResultView({ result, onReset, onDownload, downloadBusy
       ? "Dưới ngưỡng"
       : "Chưa có phân loại";
   const modeLabel = result.mode === "clinical" ? "Lâm sàng" : "Phi lâm sàng";
+  const additionalWarning = result.warning?.trim() === modelDisclaimer
+    ? undefined
+    : result.warning?.trim();
 
   return (
     <section className="dg-state-shell" aria-labelledby="prediction-result-title">
       <div className="dg-state-panel dg-result-panel">
         <div className="dg-result-heading">
           <div>
-            <p className="dg-result-eyebrow">Báo cáo sàng lọc cá nhân · {modeLabel}</p>
+            <p className="dg-result-eyebrow">{eyebrow ?? `Báo cáo sàng lọc cá nhân · ${modeLabel}`}</p>
             <h2 id="prediction-result-title">Kết quả phân tích nguy cơ đái tháo đường</h2>
             {result.patientName && <p className="dg-result-patient">Hồ sơ: {result.patientName}</p>}
           </div>
-          <div className="dg-result-actions">
-            <button type="button" className="dg-btn-secondary" onClick={onDownload} disabled={downloadBusy}>
-              {downloadBusy ? <span className="dg-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}
-              Tải PDF
-            </button>
-            <button type="button" className="dg-btn-secondary dg-result-reset" onClick={onReset}>
-              <RotateCcw aria-hidden="true" /> Dự đoán lại
-            </button>
-          </div>
+          {showActions && (
+            <div className="dg-result-actions">
+              <button type="button" className="dg-btn-secondary" onClick={() => onDownload?.()} disabled={downloadBusy}>
+                {downloadBusy ? <span className="dg-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}
+                Tải PDF
+              </button>
+              <button type="button" className="dg-btn-secondary dg-result-reset" onClick={() => onReset?.()}>
+                <RotateCcw aria-hidden="true" /> Dự đoán lại
+              </button>
+            </div>
+          )}
         </div>
-        {downloadError && <div className="dg-notice dg-notice--error" role="alert">{downloadError}</div>}
+        {showActions && downloadError && <div className="dg-notice dg-notice--error" role="alert">{downloadError}</div>}
 
         <div className="dg-notice dg-state-notice" role="note">
           <AlertTriangle aria-hidden="true" />
           <span>
-            <strong>Lưu ý:</strong> Mô hình được huấn luyện trên dữ liệu BRFSS tự khai báo, chưa được kiểm định lâm sàng tại Việt Nam. Kết quả chỉ mang tính tham khảo, không phải chẩn đoán thay thế cho bác sĩ.
-            {result.warning && <span className="dg-result-warning-detail"> {result.warning}</span>}
+            <strong>Lưu ý:</strong> {modelDisclaimer}
+            {additionalWarning && <span className="dg-result-warning-detail"> {additionalWarning}</span>}
           </span>
         </div>
 

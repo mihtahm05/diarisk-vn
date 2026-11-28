@@ -202,7 +202,12 @@ export type DashboardMetrics =
   }
   | {
     role: "doctor";
-    stats: { patients: number; reviewedPatients: number; highRiskPatients: number; totalPredictions: number };
+    stats: {
+      patients: number;
+      reviewedPatients: number;
+      highRiskPatients: number;
+      totalPredictions: number;
+    };
     distribution: Record<RiskLevel, number>;
     trend: Array<{ date: string; low: number; medium: number; high: number }>;
     recent: Array<{ patientId: string; patientCode: string; fullName: string; lastRiskLevel: RiskLevel; updatedAt: string }>;
